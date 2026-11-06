@@ -1,0 +1,26 @@
+# Build output
+**/bin/
+**/obj/
+
+# Visual Studio user and workspace state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Test and coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet packages
+*.nupkg
+*.snupkg
+
+# IDE and temporary files
+.vscode/
+.idea/
+*.tmp
+*.log
