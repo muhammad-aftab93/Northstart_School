@@ -1,0 +1,12 @@
+# ============================================================================
+# EnterpriseUI Code Owners
+# Every Pull Request targeting 'master' will automatically request a review
+# from the repository Code Owner when "Require review from Code Owners" is active.
+# ============================================================================
+
+* @muhammad-aftab93
+/.github/ @muhammad-aftab93
+/src/ @muhammad-aftab93
+/platforms/ @muhammad-aftab93
+/samples/ @muhammad-aftab93
+
