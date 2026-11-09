@@ -1,3 +1,4 @@
+using EnterpriseUI.Data;
 using EnterpriseUI.Grids;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
@@ -53,6 +54,10 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
     private readonly Label _summary;
     private readonly System.Windows.Forms.Timer _debounce;
     private readonly string _title;
+    private EnterpriseCardViewControl? _cards;
+    private EnterpriseFilterViewControl? _facets;
+    private IFilterDescriptor? _builderFilter;
+    private readonly List<IFilterDescriptor> _facetFilters = new();
 
     public RecordWorkspace(SchoolStore store, string title)
     {
@@ -92,7 +97,18 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         Commands.Items.Add(export);
         AddCommand("Print Preview", () => Grid.ShowPrintPreviewDialog());
         AddCommand("Fit Columns", Grid.BestFitAllColumns);
-        AddCommand("Clear Filters", () => { _search.Clear(); Grid.ClearFilters(); Grid.ClearSort(); });
+        AddCommand("Clear Filters", () =>
+        {
+            _search.Clear(); Grid.ClearFilters(); Grid.ClearSort();
+            _builderFilter = null; _facetFilters.Clear(); _facets?.ClearAll();
+        });
+        AddCommand("Filter Builder", () =>
+        {
+            var descriptor = EnterpriseDataFilter.Edit(FindForm(), typeof(T), _builderFilter);
+            if (_builderFilter != null) Grid.RemoveFilter(_builderFilter);
+            _builderFilter = descriptor;
+            if (descriptor != null) Grid.AddFilter(descriptor);
+        });
         var view = new ToolStripDropDownButton("View");
         view.DropDownItems.Add("Expand Groups", null, (_, _) => Grid.ExpandAllGroups());
         view.DropDownItems.Add("Collapse Groups", null, (_, _) => Grid.CollapseAllGroups());
@@ -106,7 +122,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         Commands.Items.Add(new ToolStripControlHost(_search));
         _debounce = new System.Windows.Forms.Timer { Interval = 180 };
         _search.TextChanged += (_, _) => { _debounce.Stop(); _debounce.Start(); };
-        _debounce.Tick += (_, _) => { _debounce.Stop(); Grid.SearchPanelText = _search.Text; };
+        _debounce.Tick += (_, _) => { _debounce.Stop(); Grid.SearchPanelText = _search.Text; if (_cards != null) _cards.FilterText = _search.Text; };
         _summary = new Label { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(18, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft };
         _menu.Items.Add("Edit", null, (_, _) => { if (_context != null) Edit(_context); });
         _menu.Items.Add("Delete", null, (_, _) => { if (_context != null) Delete(_context); });
@@ -123,6 +139,51 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         var button = new ToolStripButton(title);
         button.Click += (_, _) => { try { action(); } catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, _title, MessageBoxButtons.OK, MessageBoxIcon.Warning); } };
         Commands.Items.Add(button);
+    }
+
+    public EnterpriseCardViewControl? Cards => _cards;
+    public EnterpriseFilterViewControl? Facets => _facets;
+
+    /// <summary>Adds a card view of the same records, switched with the Cards / Grid command.</summary>
+    protected void UseCards(string title, string subtitle, string badge, params (string Field, string Caption, string? Format)[] fields)
+    {
+        _cards = new EnterpriseCardViewControl { Dock = DockStyle.Fill, Visible = false, TitleField = title, SubtitleField = subtitle, BadgeField = badge, AccessibleName = _title + " cards" };
+        foreach (var (field, caption, format) in fields) _cards.Fields.Add(new CardField(field, caption, format));
+        var active = typeof(T).GetProperty("Active");
+        _cards.CardFormatting += (_, e) => { if (active != null && active.GetValue(e.Item) is false) e.Accent = Color.Gray; };
+        _cards.CardActivate += (_, item) => { if (item is T record) Edit(record); };
+        _cards.DataSource = Store.Data.Records<T>();
+        Controls.Add(_cards);
+        Controls.SetChildIndex(_cards, Controls.GetChildIndex(Grid));
+        AddCommand("Cards / Grid", () => { _cards.Visible = !_cards.Visible; Grid.Visible = !_cards.Visible; });
+    }
+
+    /// <summary>Adds a faceted filter panel (checklists with counts, optional ranges) that filters the grid.</summary>
+    protected void UseFacets(string[] listFields, string[]? rangeFields = null)
+    {
+        _facets = new EnterpriseFilterViewControl { Dock = DockStyle.Left, Width = 290, Visible = false, AccessibleName = _title + " filters" };
+        foreach (var field in listFields) _facets.AddListFacet(field, FacetTitle(field));
+        foreach (var field in rangeFields ?? Array.Empty<string>()) _facets.AddRangeFacet(field, FacetTitle(field));
+        _facets.DataSource = Store.Data.Records<T>();
+        _facets.FilterChanged += (_, _) => ApplyFacets();
+        Controls.Add(_facets);
+        Controls.SetChildIndex(_facets, Controls.GetChildIndex(Grid) + 1);
+        AddCommand("Facets", () => _facets.Visible = !_facets.Visible);
+    }
+
+    private static string FacetTitle(string field)
+    {
+        var match = SchoolSchema.Fields<T>().FirstOrDefault(item => item.Name == field || item.Name + "Label" == field);
+        return match == null ? field : match.Label.Replace(" ID", string.Empty, StringComparison.Ordinal);
+    }
+
+    private void ApplyFacets()
+    {
+        var descriptors = _facets!.ToDescriptors();
+        if (_facetFilters.Count == 0 && descriptors.Count == 0) return;
+        foreach (var previous in _facetFilters) Grid.RemoveFilter(previous);
+        _facetFilters.Clear();
+        foreach (var descriptor in descriptors) { Grid.AddFilter(descriptor); _facetFilters.Add(descriptor); }
     }
 
     protected virtual T CreateRecord()
@@ -159,6 +220,8 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
             }
         }
         Grid.DataSource = Store.Data.Records<T>();
+        if (_cards != null) _cards.DataSource = Store.Data.Records<T>();
+        if (_facets != null) _facets.DataSource = Store.Data.Records<T>();
         Grid.PrintTemplate.Title = Store.Data.Settings.SchoolName + " · " + _title;
         Grid.Invalidate();
     }

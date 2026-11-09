@@ -38,13 +38,13 @@ public sealed class DashboardView : UserControl
         collection.Controls.Add(new EnterpriseBulletGraphControl { Title = "Tuition collected (%)", FeaturedMeasure = invoices == 0 ? 0 : (double)(paid / invoices * 100), ComparativeMeasure = 90, Minimum = 0, Maximum = 100, Dock = DockStyle.Top, Height = 100 });
         collection.Controls.Add(new Label { Text = $"Collected {paid:N2} {data.Settings.Currency}\r\nInvoiced {invoices:N2} {data.Settings.Currency}\r\n\r\n{data.Invoices.Count(item => item.Status == "Overdue")} overdue invoices", Dock = DockStyle.Bottom, Height = 120, Font = new Font("Segoe UI", 12f) });
         body.Controls.Add(collection, 1, 1);
-        var tasks = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
-        tasks.Columns.Add("Upcoming work", 280); tasks.Columns.Add("Due", 100); tasks.Columns.Add("Priority", 100);
-        foreach (var task in data.Tasks.Where(item => item.Status != "Done").OrderBy(item => item.DueOn).Take(7)) tasks.Items.Add(new ListViewItem(new[] { task.Title, task.DueOn.ToString("dd MMM"), task.Priority }));
+        var tasks = new EnterpriseListViewControl { Dock = DockStyle.Fill, SelectionMode = ListSelectionMode.One, AccessibleName = "Upcoming work", Margin = new Padding(0, 0, 14, 0) };
+        tasks.AddColumn("Upcoming work", 280); tasks.AddColumn("Due", 100); tasks.AddColumn("Priority", 100);
+        foreach (var task in data.Tasks.Where(item => item.Status != "Done").OrderBy(item => item.DueOn).Take(7)) tasks.Items.Add(task.Title, task.DueOn.ToString("dd MMM"), task.Priority);
         body.Controls.Add(tasks, 0, 2);
-        var activity = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
-        activity.Columns.Add("Recent activity", 280); activity.Columns.Add("Time", 150);
-        foreach (var entry in data.Audit.OrderByDescending(item => item.At).Take(8)) activity.Items.Add(new ListViewItem(new[] { entry.Action + " · " + entry.Entity, entry.At.ToLocalTime().ToString("g") }));
+        var activity = new EnterpriseListViewControl { Dock = DockStyle.Fill, SelectionMode = ListSelectionMode.One, AccessibleName = "Recent activity" };
+        activity.AddColumn("Recent activity", 280); activity.AddColumn("Time", 150);
+        foreach (var entry in data.Audit.OrderByDescending(item => item.At).Take(8)) activity.Items.Add(entry.Action + " · " + entry.Entity, entry.At.ToLocalTime().ToString("g"));
         body.Controls.Add(activity, 1, 2);
         Controls.Add(body); Controls.Add(SchoolUi.Heading("School Overview")); SchoolUi.Apply(this);
     }

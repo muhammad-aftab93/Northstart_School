@@ -1,4 +1,5 @@
 using EnterpriseUI.Exporting;
+using EnterpriseUI.WinForms;
 using TestDataGrid.Services;
 
 namespace TestDataGrid.Views;
@@ -7,11 +8,11 @@ public sealed class ReportsView : UserControl
 {
     private readonly SchoolStore _store;
     private readonly ComboBox _reports;
-    private readonly DataGridView _preview;
+    private readonly EnterpriseListViewControl _preview;
     public ReportsView(SchoolStore store)
     {
         _store = store; Dock = DockStyle.Fill; Font = SchoolUi.BodyFont;
-        _preview = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, RowHeadersVisible = false, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
+        _preview = new EnterpriseListViewControl { Dock = DockStyle.Fill, AccessibleName = "Report preview", SelectionMode = ListSelectionMode.MultiExtended };
         var toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(18, 8, 8, 8) };
         _reports = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
         _reports.Items.AddRange(new object[] { "Outstanding Fees", "Attendance Summary", "Course Results", "Activity Log" });
@@ -39,9 +40,24 @@ public sealed class ReportsView : UserControl
     private void Reload()
     {
         var sheet = SchoolReports.Build(_store.Data, (string)_reports.SelectedItem!).Sheets[0];
-        _preview.Columns.Clear(); _preview.Rows.Clear();
-        foreach (var column in sheet.Columns) _preview.Columns.Add(column.Key, column.Title);
-        foreach (var row in sheet.Rows) _preview.Rows.Add(row.Cells.Select(value => value ?? string.Empty).ToArray());
+        _preview.Items.Clear();
+        _preview.ClearColumns();
+        foreach (var column in sheet.Columns) _preview.AddColumn(column.Title, Math.Max(110, 900 / Math.Max(1, sheet.Columns.Count)));
+        _preview.Items.AddRange(sheet.Rows.Select(row => ToItem(sheet, row)));
     }
+
+    private static EnterpriseListViewItem ToItem(ExportSheet sheet, ExportRow row)
+    {
+        var cells = row.Cells.Select((value, index) => Format(sheet.Columns[index], value)).ToArray();
+        return new EnterpriseListViewItem(cells.FirstOrDefault() ?? string.Empty, cells.Skip(1).ToArray());
+    }
+
+    private static string Format(ExportColumn column, object? value) => value switch
+    {
+        null => string.Empty,
+        IFormattable formattable when !string.IsNullOrEmpty(column.Format) => formattable.ToString(column.Format, null),
+        DateTime date => date.ToString("g"),
+        _ => Convert.ToString(value) ?? string.Empty
+    };
     protected override void Dispose(bool disposing) { if (disposing) _store.Changed -= Changed; base.Dispose(disposing); }
 }

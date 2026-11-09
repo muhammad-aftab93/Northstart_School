@@ -1,4 +1,5 @@
 using EnterpriseUI.Grids;
+using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
 using TestDataGrid.Models;
 using TestDataGrid.Services;
@@ -11,6 +12,8 @@ public sealed class StudentsView : RecordWorkspace<StudentRecord>
     {
         Grid.EnableMasterDetail = true;
         RebuildDetails();
+        UseCards("FullName", "Email", "Department", ("StudentCode", "Student code", null), ("Year", "Year", null), ("EnrolledOn", "Enrolled", "d"), ("Active", "Active", null));
+        UseFacets(new[] { "Department", "Year", "Active" });
         Store.Changed += DetailsChanged;
         AddCommand("Archive / Activate", () =>
         {
@@ -43,6 +46,8 @@ public sealed class AttendanceView : RecordWorkspace<AttendanceRecord>
 {
     public AttendanceView(SchoolStore store) : base(store, "Attendance")
     {
+        UseFacets(new[] { "Status", "CourseIdLabel" });
+        AddCommand("Roll Call...", () => { using var dialog = new RollCallDialog(Store); dialog.ShowDialog(FindForm()); });
         AddCommand("Mark Today Present", () =>
         {
             if (MessageBox.Show(FindForm(), "Mark today's enrolled students as present? Existing marks will be retained.", "Roll Call", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
@@ -56,6 +61,7 @@ public sealed class FinanceView : RecordWorkspace<InvoiceRecord>
 {
     public FinanceView(SchoolStore store) : base(store, "Finance")
     {
+        UseFacets(new[] { "Status" }, new[] { "Amount", "Balance" });
         AddCommand("Record Payment", () =>
         {
             if (Grid.FocusedRecord is not { } invoice) return;
@@ -96,6 +102,75 @@ public sealed class PaymentDialog : Form
         buttons.Controls.Add(cancel); buttons.Controls.Add(save);
         Controls.Add(table); Controls.Add(_error); Controls.Add(buttons); AcceptButton = save; CancelButton = cancel; SchoolUi.Apply(this); _error.ForeColor = Color.Firebrick;
     }
+}
+
+public sealed class StaffView : RecordWorkspace<StaffRecord>
+{
+    public StaffView(SchoolStore store) : base(store, "Staff")
+    {
+        UseCards("FullName", "Position", "Department", ("Email", "Email", null), ("Active", "Active", null));
+        UseFacets(new[] { "Department", "Position", "Active" });
+    }
+}
+
+public sealed class EnrollmentsView : RecordWorkspace<EnrollmentRecord>
+{
+    public EnrollmentsView(SchoolStore store) : base(store, "Enrollments")
+    {
+        UseFacets(new[] { "Status", "CourseIdLabel" }, new[] { "Grade" });
+    }
+}
+
+/// <summary>Courses with a department / course tree that filters the list.</summary>
+public sealed class CoursesView : RecordWorkspace<CourseRecord>
+{
+    private readonly EnterpriseTreeViewControl _tree = new() { Dock = DockStyle.Left, Width = 280, AccessibleName = "Course catalog" };
+
+    public CoursesView(SchoolStore store) : base(store, "Courses")
+    {
+        UseCards("Title", "Code", "Department", ("TeacherIdLabel", "Teacher", null), ("Credits", "Credits", null), ("Capacity", "Capacity", null), ("Active", "Active", null));
+        Controls.Add(_tree);
+        Controls.SetChildIndex(_tree, Controls.GetChildIndex(Grid) + 1);
+        _tree.AfterSelect += (_, e) => ApplySelection(e.Node);
+        BuildTree();
+        Store.Changed += TreeChanged;
+        SchoolUi.Apply(this);
+    }
+
+    private void TreeChanged(object? sender, EventArgs e) => BuildTree();
+
+    private void BuildTree()
+    {
+        _tree.BeginUpdate();
+        _tree.Nodes.Clear();
+        var all = _tree.Nodes.Add("All courses (" + Store.Data.Courses.Count + ")");
+        foreach (var department in Store.Data.Courses.GroupBy(item => item.Department).OrderBy(group => group.Key))
+        {
+            var node = all.Nodes.Add($"{department.Key} ({department.Count()})");
+            node.Tag = department.Key;
+            foreach (var course in department.OrderBy(item => item.Code))
+            {
+                var enrolled = Store.Data.Enrollments.Count(item => item.CourseId == course.Id && item.Status == "Enrolled");
+                node.Nodes.Add($"{course.Code} · {course.Title} ({enrolled}/{course.Capacity})").Tag = course;
+            }
+        }
+
+        all.Expanded = true;
+        _tree.EndUpdate();
+    }
+
+    private void ApplySelection(EnterpriseTreeNode node)
+    {
+        Grid.ClearFilters();
+        switch (node.Tag)
+        {
+            case string department: Grid.FilterBy("Department", EnterpriseUI.Data.FilterOperator.IsEqualTo, department); break;
+            case CourseRecord course: Grid.FilterBy("Code", EnterpriseUI.Data.FilterOperator.IsEqualTo, course.Code); break;
+        }
+    }
+
+    public EnterpriseTreeViewControl Tree => _tree;
+    protected override void Dispose(bool disposing) { if (disposing) Store.Changed -= TreeChanged; base.Dispose(disposing); }
 }
 
 public sealed class TasksView : RecordWorkspace<TaskRecord>

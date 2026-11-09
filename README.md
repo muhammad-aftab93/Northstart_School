@@ -7,15 +7,18 @@ Northstar School is an offline Windows desktop sample for managing day-to-day sc
 ## Features
 
 - Dashboard with student, task, lesson, and finance summaries
-- Student, staff, course, and enrollment management
-- Attendance records and batch roll call
+- Analytics: enrollment pivot, attendance and room-booking heat maps, outstanding-fees tree map
+- Student, staff, course, and enrollment management, each as a grid with an optional card view, faceted filters and a filter builder
+- Course catalog tree that filters the course list
+- Attendance records, batch roll call and a per-course roll call with tick lists
 - Task list and draggable task board
 - Timetable with room and teacher conflict validation
 - Invoices, payment recording, and outstanding balances
 - Attendance, course results, activity, and outstanding-fee reports
+- Audit log in a virtual grid
 - CSV, JSON, XML, HTML, XLSX, and PDF export; print preview
 - Search, filtering, sorting, grouping, paging, column layouts, and summaries
-- Theme selection, theme JSON editing, and control explorer
+- Validated settings form, theme selection in a property inspector, theme JSON editing, and control explorer
 - Backup and restore from Settings
 
 The **Grid Workshop** is a separate feature showcase; it is not the school’s operational student screen.
@@ -24,7 +27,7 @@ The **Grid Workshop** is a separate feature showcase; it is not the school’s o
 
 - Windows 10 or later
 - .NET 10 SDK
-- `EnterpriseUI.WinForms` version `1.0.0` available from a configured NuGet package source
+- `EnterpriseUI.WinForms` version `1.1.0` available from a configured NuGet package source
 
 ## Run
 

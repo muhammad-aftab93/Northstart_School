@@ -11,6 +11,7 @@ public sealed class ScheduleView : RecordWorkspace<LessonRecord>
     public ScheduleView(SchoolStore store) : base(store, "Timetable")
     {
         _calendar = new MonthCalendar { Dock = DockStyle.Top, MaxSelectionCount = 1, CalendarDimensions = new Size(1, 1) };
+        UseFacets(new[] { "Room", "CourseIdLabel" });
         _calendar.DateSelected += (_, e) =>
         {
             _schedule.SelectedDate = e.Start;

@@ -1,4 +1,5 @@
 using EnterpriseUI.Exporting;
+using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
 using TestDataGrid.Models;
 using TestDataGrid.Services;
@@ -93,13 +94,13 @@ internal static class SchoolVerification
                     }
                     using var dialog = new SchoolRecordDialog<StudentRecord>(store, store.Data.Students[0], "Edit student");
                     dialog.Show(main); await Task.Delay(30);
-                    FindControls(dialog).OfType<TextBox>().Single(input => input.AccessibleName == "Full name").Text = "Cancelled name";
+                    FindControls(dialog).OfType<EnterpriseInputControl>().Single(input => input.AccessibleName == "Full name").Text = "Cancelled name";
                     dialog.CancelButton!.PerformClick(); dialog.Close();
                     Check(store.Data.Students[0].FullName != "Cancelled name", "Cancel leaves the stored student unchanged");
                     using (var edit = new SchoolRecordDialog<StudentRecord>(store, store.Data.Students[0], "Edit student"))
                     {
                         edit.Show(main); await Task.Delay(30);
-                        FindControls(edit).OfType<TextBox>().Single(input => input.AccessibleName == "Full name").Text = "Saved through modal";
+                        FindControls(edit).OfType<EnterpriseInputControl>().Single(input => input.AccessibleName == "Full name").Text = "Saved through modal";
                         Check(edit.SaveDraft(), "Custom modal saves valid records");
                         edit.Close();
                         Check(new SchoolStore(file).Data.Students[0].FullName == "Saved through modal", "Modal edits persist to disk");
@@ -113,6 +114,7 @@ internal static class SchoolVerification
                         Check(main.CurrentView.Width > 500, theme + " management screen updates");
                     }
                     EnterpriseUI.Theming.ThemeManager.Instance.ApplyTheme(currentTheme);
+                    await VerifyControlsAsync(main, store, file, currentTheme.Name, Check);
                     main.Navigate("Tasks");
                     var taskToolbar = FindControls(main.CurrentView).OfType<ToolStrip>().Single();
                     taskToolbar.Items.Cast<ToolStripItem>().Single(item => item.Text == "Board / List").PerformClick();
@@ -134,6 +136,57 @@ internal static class SchoolVerification
             return Environment.ExitCode;
         }
         catch (Exception exception) { log.WriteLine("FAIL: " + exception); return 1; }
+    }
+
+    private static async Task VerifyControlsAsync(MainForm main, SchoolStore store, string file, string themeName, Action<bool, string> check)
+    {
+        main.Navigate("Students");
+        var students = (StudentsView)main.CurrentView;
+        check(students.Cards != null && students.Cards.Count == store.Data.Students.Count, "Student card view lists every student");
+        students.Facets!.ToggleValue("Department", "Science", true);
+        await Task.Delay(300);
+        check(students.Grid.TotalRecordCount == store.Data.Students.Count(item => item.Department == "Science"), "Department facet filters the student grid");
+        students.Facets.ClearAll();
+        await Task.Delay(300);
+        check(students.Grid.TotalRecordCount == store.Data.Students.Count, "Clearing the facets restores every student");
+
+        main.Navigate("Courses");
+        var courses = (CoursesView)main.CurrentView;
+        var department = courses.Tree.Nodes[0].Nodes[0];
+        courses.Tree.SelectedNode = department;
+        await Task.Delay(300);
+        check(courses.Grid.TotalRecordCount == store.Data.Courses.Count(item => item.Department == (string)department.Tag!), "Course tree selection filters the course list");
+
+        main.Navigate("Analytics");
+        var analytics = (AnalyticsView)main.CurrentView;
+        check(analytics.Pivot?.Result?.Rows.Count > 0 && analytics.AttendanceMap?.RowLabels.Count > 0 && analytics.FeeMap?.Items.Count > 0 && analytics.RoomMap?.RowLabels.Count > 0, "Analytics pivot, heat maps and tree map show live data");
+
+        main.Navigate("Audit Log");
+        check(((AuditLogView)main.CurrentView).Grid.RowCount == store.Data.Audit.Count, "Audit log virtual grid covers every entry");
+
+        var courseId = store.Data.Courses.Where(item => item.Active).OrderBy(item => item.Code).First().Id;
+        using (var roll = new RollCallDialog(store))
+        {
+            roll.Show(main);
+            await Task.Delay(30);
+            check(roll.CourseList.Count > 0 && roll.StudentList.Count > 0, "Roll call lists active courses and enrolled students");
+            roll.StudentList.SetItemChecked(0, false);
+            check(roll.Save(), "Roll call saves");
+            roll.Close();
+        }
+        check(new SchoolStore(file).Data.Attendance.Any(item => item.CourseId == courseId && item.Date.Date == DateTime.Today && item.Status == "Absent"), "Unticked students are stored as absent");
+
+        main.Navigate("Settings");
+        var settings = (SettingsView)main.CurrentView;
+        ((EnterpriseInputControl)settings.Entry.GetEditor("SchoolName")!).Text = "Northstar Entry";
+        check(settings.Entry.Apply(), "Settings form saves valid values");
+        check(new SchoolStore(file).Data.Settings.SchoolName == "Northstar Entry", "Settings form persists to disk");
+        ((EnterpriseInputControl)settings.Entry.GetEditor("PageSize")!).Text = "2";
+        check(!settings.Entry.Apply() && new SchoolStore(file).Data.Settings.PageSize != 2, "Settings form rejects an out-of-range page size");
+        var preferences = (WorkspacePreferences)settings.Preferences.SelectedObject!;
+        preferences.Theme = "Fluent-Dark";
+        check(new SchoolStore(file).Data.Settings.Theme == "Fluent-Dark", "Theme preference persists");
+        preferences.Theme = themeName;
     }
 
     private static IEnumerable<Control> FindControls(Control parent)

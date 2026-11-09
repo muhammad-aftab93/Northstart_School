@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+
 namespace TestDataGrid.Models;
 
 public abstract class SchoolRecord
@@ -121,10 +124,23 @@ public sealed class AuditEntry
 
 public sealed class SchoolSettings
 {
+    [Display(Name = "School name", GroupName = "School", Order = 1, Description = "Shown in the title bar, the navigation header and printed reports.")]
+    [Required, StringLength(80, MinimumLength = 3)]
     public string SchoolName { get; set; } = "Northstar School";
+
+    [Display(Name = "Academic year", GroupName = "School", Order = 2, Prompt = "2026-2027")]
+    [Required, StringLength(20, MinimumLength = 4)]
     public string AcademicYear { get; set; } = "2026-2027";
+
+    [Browsable(false)]
     public string Theme { get; set; } = "Fluent-Light";
+
+    [Display(Name = "Rows per page", GroupName = "Lists", Order = 3, Description = "Page size of every list. Between 5 and 500.")]
+    [Range(5, 500)]
     public int PageSize { get; set; } = 25;
+
+    [Display(Name = "Currency code", GroupName = "Lists", Order = 4, Description = "Three letters, for example EUR.")]
+    [Required, StringLength(3, MinimumLength = 3)]
     public string Currency { get; set; } = "EUR";
 }
 

@@ -1,5 +1,6 @@
 using EnterpriseUI.Grids;
 using EnterpriseUI.Theming;
+using EnterpriseUI.WinForms;
 using TestDataGrid.Models;
 
 namespace TestDataGrid.Views;
@@ -20,6 +21,7 @@ public static class SchoolUi
         root.ForeColor = Text;
         foreach (Control control in root.Controls)
         {
+            if (control is EnterpriseControlBase or EnterpriseScrollBar) continue;
             if (control is Button button) { button.UseVisualStyleBackColor = true; button.ForeColor = SystemColors.ControlText; }
             else if (control is TextBox or ComboBox or NumericUpDown) { control.BackColor = Surface; control.ForeColor = Text; }
             else Apply(control);
