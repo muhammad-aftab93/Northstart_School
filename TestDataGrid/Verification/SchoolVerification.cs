@@ -1,3 +1,4 @@
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Exporting;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
@@ -79,7 +80,7 @@ internal static class SchoolVerification
                 Check(new FileInfo(path).Length > 0, kind + " PDF report exports");
             }
 
-            using var main = new MainForm(store);
+            using var main = new MainForm(store, interactive: false);
             main.Shown += async (_, _) =>
             {
                 try
@@ -115,16 +116,17 @@ internal static class SchoolVerification
                     }
                     EnterpriseUI.Theming.ThemeManager.Instance.ApplyTheme(currentTheme);
                     await VerifyControlsAsync(main, store, file, currentTheme.Name, Check);
+                    await VerifyInteractiveControlsAsync(main, store, Check);
                     main.Navigate("Tasks");
-                    var taskToolbar = FindControls(main.CurrentView).OfType<ToolStrip>().Single();
-                    taskToolbar.Items.Cast<ToolStripItem>().Single(item => item.Text == "Board / List").PerformClick();
+                    var taskToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
+                    taskToolbar.PerformCommand("Board / List");
                     await Task.Delay(30);
                     Check(!((TasksView)main.CurrentView).Grid.Visible, "Board view hides the list grid");
                     Check(FindControls(main.CurrentView).OfType<Button>().Any(button => button.Text.Contains("Prepare laboratory", StringComparison.Ordinal)), "Task board displays persisted task cards");
                     using (var image = new Bitmap(main.Width, main.Height)) { main.DrawToBitmap(image, new Rectangle(Point.Empty, main.Size)); image.Save(Path.Combine(directory, "Task-Board.png"), System.Drawing.Imaging.ImageFormat.Png); }
                     main.Navigate("Attendance");
-                    var attendanceToolbar = FindControls(main.CurrentView).OfType<ToolStrip>().Single();
-                    Check(attendanceToolbar.Items.Cast<ToolStripItem>().Any(item => item.Text == "Mark Today Present"), "Attendance roll-call command is available");
+                    var attendanceToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
+                    Check(attendanceToolbar.Titles.Contains("Mark Today Present"), "Attendance roll-call command is available");
                     main.ClientSize = new Size(1050, 650); main.Navigate("Students"); main.PerformLayout(); await Task.Delay(30);
                     Check(main.CurrentView.Width > 500 && main.CurrentView.Height > 300, "Compact desktop layout remains usable");
                     log.WriteLine($"Verified {checks} school checks.");
@@ -187,6 +189,142 @@ internal static class SchoolVerification
         preferences.Theme = "Fluent-Dark";
         check(new SchoolStore(file).Data.Settings.Theme == "Fluent-Dark", "Theme preference persists");
         preferences.Theme = themeName;
+    }
+
+    private static async Task VerifyInteractiveControlsAsync(MainForm main, SchoolStore store, Action<bool, string> check)
+    {
+        main.Navigate("Finance");
+        check(FindControls(main).OfType<EnterpriseToggleButtonControl>().Single(item => item.GroupName == "navigation" && item.Checked).Text == "Finance", "Navigation highlights the open screen");
+
+        main.Navigate("Overview");
+        var dashboard = (DashboardView)main.CurrentView;
+        check(dashboard.Announcements?.Panels.Count >= 2, "Overview rotates announcements built from live alerts");
+        check(FindControls(dashboard).OfType<EnterpriseProgressBarControl>().Count() == 3, "Overview shows attendance, task and seat meters");
+
+        main.Navigate("Courses");
+        var courses = (CoursesView)main.CurrentView;
+        var courseBar = FindControls(courses).OfType<CommandBar>().Single();
+        check(courses.Showcase.Items.Count == store.Data.Courses.Count(item => item.Active), "Course showcase lists every active course");
+        courseBar.PerformCommand("Showcase");
+        check(courses.Showcase.Visible && !courses.Grid.Visible, "Showcase replaces the course grid");
+        await Task.Delay(400); Capture(main, "Courses-Showcase");
+        courseBar.PerformCommand("Showcase");
+        check(!courses.Showcase.Visible && courses.Grid.Visible, "Leaving the showcase restores the grid");
+
+        var enrollment = SchoolStore.Clone(store.Data.Enrollments[0]); enrollment.Feedback = 4.5m;
+        SchoolOperations.SaveRecord(store, enrollment);
+        check(store.Data.Enrollments[0].Feedback == 4.5m, "Course ratings save in half steps");
+        enrollment.Feedback = 4.3m;
+        try { SchoolOperations.SaveRecord(store, enrollment); check(false, "Ratings between half steps reject"); }
+        catch (InvalidOperationException) { check(store.Data.Enrollments[0].Feedback == 4.5m, "Ratings between half steps reject"); }
+        using (var dialog = new SchoolRecordDialog<EnrollmentRecord>(store, store.Data.Enrollments[0], "Edit enrollment"))
+        {
+            dialog.Show(main); await Task.Delay(30);
+            FindControls(dialog).OfType<EnterpriseStarRatingControl>().Single().Value = 3.5;
+            Capture(dialog, "Dialog-Enrollment");
+            check(dialog.SaveDraft() && store.Data.Enrollments[0].Feedback == 3.5m, "Enrollment dialog edits the course rating with stars");
+        }
+
+        using (var dialog = new SchoolRecordDialog<StudentRecord>(store, store.Data.Students[1], "Edit student"))
+        {
+            dialog.Show(main); await Task.Delay(30);
+            var paste = FindControls(dialog).OfType<EnterpriseSmartPasteButton>().Single();
+            await paste.PasteAsync("Name: Pasted Person\nEmail: pasted@example.com");
+            Capture(dialog, "Dialog-Student");
+            check(dialog.SaveDraft() && store.Data.Students[1].FullName == "Pasted Person" && store.Data.Students[1].Email == "pasted@example.com", "Smart paste fills the student name and email");
+        }
+
+        using (var dialog = new SchoolRecordDialog<AttendanceRecord>(store, store.Data.Attendance[0], "Edit attendance"))
+        {
+            dialog.Show(main); await Task.Delay(30);
+            check(FindControls(dialog).OfType<EnterpriseSpeechToTextButton>().Count() == 1, "Notes fields offer dictation");
+            Capture(dialog, "Dialog-Attendance");
+        }
+
+        using (var summary = new StudentSummaryDialog(store, store.Data.Students[0]))
+        {
+            summary.Show(main); await Task.Delay(30);
+            Capture(summary, "Dialog-StudentSummary");
+        }
+
+        main.Navigate("Assistant");
+        var assistant = (AssistantView)main.CurrentView;
+        assistant.Chat.SendText("overdue fees");
+        for (var attempt = 0; attempt < 50 && assistant.Chat.Conversation.Messages.Count < 3; attempt++) await Task.Delay(100);
+        var answer = assistant.Chat.Conversation.Messages[^1];
+        check(!answer.Author.IsLocal && answer.Text.Contains("overdue", StringComparison.OrdinalIgnoreCase), "Chat answers from the live records");
+        var debtor = store.Data.Students.First(student => store.Data.Invoices.Any(invoice => invoice.StudentId == student.Id && invoice.Balance > 0));
+        var draft = await assistant.Prompt.SubmitAsync(debtor.StudentCode, SchoolAssistant.FeeReminder);
+        check(draft?.State == AIPromptState.Completed && draft.Response!.Contains("Dear parent", StringComparison.Ordinal) && draft.Response.Contains(debtor.FullName, StringComparison.Ordinal), "Prompt drafts a fee reminder for the named student");
+        await Task.Delay(200); Capture(main, "Assistant-Chat");
+
+        check(SchoolAlerts.Build(store.Data).Any(alert => alert.Page == "Finance"), "Overdue invoices raise an alert");
+        var unread = main.Tray.UnreadCount;
+        main.Notify("Check", "Test alert", NotificationSeverity.Info, "Tasks");
+        check(main.Tray.UnreadCount == unread + 1, "Alerts raise the tray unread count");
+        main.Navigate("Tasks");
+        check(main.Tray.UnreadCount == unread, "Opening the screen marks its alerts read");
+        var invoice = store.Data.Invoices.First(item => item.Balance > 0);
+        SchoolOperations.RecordPayment(store, invoice.Id, 5m, "NOTIFY");
+        check(main.Tray.UnreadCount == unread + 1, "A recorded payment raises an alert");
+
+        using (main.BeginBusy("Checking")) check(main.IsBusy, "Busy indicator shows while work runs");
+        check(!main.IsBusy, "Busy indicator clears afterwards");
+
+        var touch = FindControls(main).OfType<EnterpriseToggleButtonControl>().Single(item => item.Text == "Touch keyboard");
+        touch.PerformClick();
+        check(main.Keyboard.Parent!.Visible, "Touch keyboard opens from the navigation");
+        touch.PerformClick();
+        check(!main.Keyboard.Parent.Visible, "Touch keyboard closes again");
+
+        main.Navigate("Analytics");
+        var analytics = (AnalyticsView)main.CurrentView;
+        analytics.GradeRange.ValueLow = 90;
+        analytics.ApplyFilters();
+        var shown = ((System.Collections.IEnumerable)analytics.Pivot!.DataSource!).Cast<object>().Count();
+        check(shown == store.Data.Enrollments.Count(item => item.Grade >= 90) && shown < store.Data.Enrollments.Count, "Grade range slider filters the pivot");
+        analytics.GradeRange.ValueLow = 0;
+
+        using (var wizard = new AdmissionWizard(store))
+        {
+            wizard.Show(main); await Task.Delay(30);
+            check(!wizard.Steps.Next() && wizard.Steps.CurrentStep == 0, "Admission wizard stops at an empty student step");
+            wizard.NameInput.Text = "Wizard Student"; wizard.EmailInput.Text = "wizard@example.com";
+            Capture(wizard, "Wizard-1");
+            wizard.NextButton.PerformClick();
+            wizard.CourseList.SetItemChecked(0, true); wizard.CourseList.SetItemChecked(1, true);
+            Capture(wizard, "Wizard-2");
+            wizard.NextButton.PerformClick();
+            check(wizard.Steps.CurrentStep == 2 && wizard.Tuition.Value == 850, "Tuition is suggested from the chosen courses");
+            Capture(wizard, "Wizard-3");
+            wizard.NextButton.PerformClick();
+            Capture(wizard, "Wizard-4");
+            var students = store.Data.Students.Count;
+            wizard.NextButton.PerformClick();
+            var admitted = store.Data.Students.SingleOrDefault(student => student.FullName == "Wizard Student");
+            check(store.Data.Students.Count == students + 1 && admitted != null && store.Data.Enrollments.Count(item => item.StudentId == admitted.Id) == 2
+                && store.Data.Invoices.Single(item => item.StudentId == admitted.Id).Amount == 850m, "Admission creates the student, enrollments and tuition invoice together");
+        }
+
+        try
+        {
+            var provider = new WindowsSpeechProvider();
+            await using var stream = await provider.StartAsync(new SpeechRecognitionOptions("en-US"), CancellationToken.None);
+            await stream.WriteAudioAsync(new byte[3200], CancellationToken.None);
+            await stream.CompleteAsync(CancellationToken.None);
+            check(true, "Windows speech recognizer opens and closes a stream");
+        }
+        catch (InvalidOperationException exception) when (exception.Message.Contains("No Windows speech recognizer", StringComparison.Ordinal))
+        {
+            check(true, "Windows speech recognizer is not installed on this machine; dictation reports it");
+        }
+    }
+
+    private static void Capture(Control control, string name)
+    {
+        using var image = new Bitmap(control.Width, control.Height);
+        control.DrawToBitmap(image, new Rectangle(Point.Empty, control.Size));
+        image.Save(Path.Combine(Path.GetTempPath(), "NorthstarSchool-Verification", name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
     }
 
     private static IEnumerable<Control> FindControls(Control parent)

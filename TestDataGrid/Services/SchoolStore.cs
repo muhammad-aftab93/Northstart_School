@@ -78,7 +78,7 @@ public sealed class SchoolStore
             for (var offset = 0; offset < 2; offset++)
             {
                 var course = (index + offset * 3) % 8 + 1;
-                data.Enrollments.Add(new EnrollmentRecord { Id = data.Enrollments.Count + 1, StudentId = index, CourseId = course, EnrolledOn = DateTime.Today.AddDays(-45), Grade = 60 + index % 41 });
+                data.Enrollments.Add(new EnrollmentRecord { Id = data.Enrollments.Count + 1, StudentId = index, CourseId = course, EnrolledOn = DateTime.Today.AddDays(-45), Grade = 60 + index % 41, Feedback = (index + offset) % 6 == 0 ? 0 : 3m + (index + offset) % 5 * 0.5m });
                 for (var day = 0; day < 7; day++)
                     data.Attendance.Add(new AttendanceRecord { Id = data.Attendance.Count + 1, StudentId = index, CourseId = course, Date = DateTime.Today.AddDays(-day), Status = (index + day) % 11 == 0 ? "Absent" : (index + day) % 13 == 0 ? "Late" : "Present" });
             }

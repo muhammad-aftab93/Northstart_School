@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Models;
 using TestDataGrid.Services;
@@ -40,7 +41,12 @@ public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
             IReadOnlyList<LookupOption>? options = null;
             Control input;
             string? hint = null;
-            if (field.Lookup != null)
+            if (field.Rating)
+            {
+                input = new EnterpriseStarRatingControl { Maximum = 5, Precision = RatingPrecision.Half, SymbolSize = 26, Width = 220, Height = 40, Value = Convert.ToDouble(value ?? 0m), Descriptions = new[] { "Poor", "Fair", "Good", "Very good", "Excellent" } };
+                hint = "Click a star again to clear the rating";
+            }
+            else if (field.Lookup != null)
             {
                 options = field.Lookup(store.Data).ToList();
                 var drop = new EnterpriseDropDownControl { PlaceholderText = "Select " + field.Label.Replace(" ID", string.Empty, StringComparison.Ordinal).ToLowerInvariant() };
@@ -74,15 +80,43 @@ public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
 
         _error = new Label { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(24, 0, 20, 0), ForeColor = Color.Firebrick, AutoEllipsis = true };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 60, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(18, 10, 18, 10) };
-        var cancel = new Button { Text = "Cancel", Width = 90, Height = 32, DialogResult = DialogResult.Cancel };
-        var save = new Button { Text = "Save", Width = 90, Height = 32 };
+        var cancel = new EnterpriseButtonControl { Text = "Cancel", Variant = EnterpriseButtonVariant.Outline, Width = 100, Height = 34, DialogResult = DialogResult.Cancel };
+        var save = new EnterpriseButtonControl { Text = "Save", Glyph = "\u2714", Variant = EnterpriseButtonVariant.Primary, Width = 100, Height = 34 };
         save.Click += (_, _) => SaveDraft();
         buttons.Controls.Add(cancel); buttons.Controls.Add(save);
+        AddAssistTools(buttons);
         Controls.Add(layout); Controls.Add(_error); Controls.Add(buttons);
         AcceptButton = save;
         CancelButton = cancel;
         SchoolUi.Apply(this);
         _error.ForeColor = Color.Firebrick;
+    }
+
+    /// <summary>Contact paste for people records; dictation and inline writing help for the notes field.</summary>
+    private void AddAssistTools(FlowLayoutPanel buttons)
+    {
+        var first = true;
+        Padding NextMargin() { var margin = first ? new Padding(28, 3, 3, 3) : new Padding(3); first = false; return margin; }
+
+        if (typeof(T) == typeof(StudentRecord) || typeof(T) == typeof(StaffRecord))
+        {
+            var paste = new EnterpriseSmartPasteButton { Text = "Paste details", Width = 160, Height = 34, Margin = NextMargin(), AccessibleName = "Paste contact details" };
+            foreach (var (_, input, field, _) in _inputs)
+            {
+                if (field.Name == "FullName") paste.Bind(input, SmartPasteFieldKind.Name, "FullName");
+                else if (field.Name == "Email") paste.Bind(input, SmartPasteFieldKind.Email, "Email");
+            }
+
+            paste.Failed += (_, exception) => SchoolUi.Hint(paste, exception.Message, "Nothing was pasted");
+            buttons.Controls.Add(paste);
+        }
+
+        if (_inputs.Where(item => item.Field.Multiline).Select(item => item.Input).OfType<EnterpriseInputControl>().FirstOrDefault() is not { } notes) return;
+        var mic = new EnterpriseSpeechToTextButton { Text = "Dictate", Target = notes.InnerTextBox, Provider = SchoolUi.Speech, Width = 150, Height = 34, ShowPartialText = false, Margin = NextMargin(), AccessibleName = "Dictate notes" };
+        mic.Error += (_, exception) => SchoolUi.Hint(mic, exception.Message, "Dictation is unavailable");
+        buttons.Controls.Add(mic);
+        var assistant = new EnterpriseInlineAIAssistant { Target = notes.InnerTextBox, Provider = new SampleAIPromptProvider(), Context = "A short note in a school record" };
+        Disposed += (_, _) => assistant.Dispose();
     }
 
     private static object ParseNumber(PropertyInfo property, RecordField field, string text)
@@ -110,6 +144,7 @@ public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
                 {
                     object? value = input switch
                     {
+                        EnterpriseStarRatingControl rating => (decimal)rating.Value,
                         EnterpriseCheckControl check => check.Checked,
                         EnterpriseDropDownControl drop when options != null => drop.SelectedIndex >= 0 ? options[drop.SelectedIndex].Id : 0,
                         EnterpriseDropDownControl drop => drop.SelectedItem,
@@ -120,10 +155,12 @@ public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
                     };
                     property.SetValue(_draft, value);
                 }
-                catch (FormatException)
+                catch (FormatException exception)
                 {
                     if (input is EnterpriseInputControl bad) bad.HasError = true;
-                    throw;
+                    _error.Text = string.Empty;
+                    SchoolUi.Hint(input, exception.Message);
+                    return false;
                 }
             }
 

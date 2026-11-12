@@ -1,3 +1,4 @@
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Grids;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
@@ -23,11 +24,13 @@ public sealed class StudentsView : RecordWorkspace<StudentRecord>
         AddCommand("Student Summary", () =>
         {
             if (Grid.FocusedRecord is not { } student) return;
-            using var dialog = new Form { Text = student.FullName, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(580, 360) };
-            var enrollments = Store.Data.Enrollments.Where(item => item.StudentId == student.Id).Select(item => $"{Store.Data.Courses.Single(course => course.Id == item.CourseId).Title}: {item.Status}, {item.Grade:N0}%");
-            var balance = Store.Data.Invoices.Where(item => item.StudentId == student.Id).Sum(item => item.Balance);
-            dialog.Controls.Add(new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, Text = $"{student.StudentCode}  {student.FullName}\r\n{student.Email}\r\n{student.Department} · Year {student.Year}\r\n\r\n{string.Join("\r\n", enrollments)}\r\n\r\nOutstanding: {balance:N2} {Store.Data.Settings.Currency}" });
+            using var dialog = new StudentSummaryDialog(Store, student);
             dialog.ShowDialog(FindForm());
+        });
+        AddCommand("Admit Student...", () =>
+        {
+            using var wizard = new AdmissionWizard(Store);
+            wizard.ShowDialog(FindForm());
         });
     }
     private void DetailsChanged(object? sender, EventArgs e) => RebuildDetails();
@@ -84,16 +87,16 @@ public sealed class PaymentDialog : Form
         MaximizeBox = MinimizeBox = false; ClientSize = new Size(430, 250); Font = SchoolUi.BodyFont;
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Padding = new Padding(22) };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _amount = new NumericUpDown { DecimalPlaces = 2, Maximum = Math.Max(0, invoice.Balance), Value = Math.Max(0, invoice.Balance), Dock = DockStyle.Fill };
-        _reference = new TextBox { Dock = DockStyle.Fill, Text = "BANK-" + DateTime.Now.ToString("yyyyMMddHHmm") };
-        table.Controls.Add(new Label { Text = "Outstanding", AutoSize = true }, 0, 0);
-        table.Controls.Add(new Label { Text = $"{invoice.Balance:N2} {store.Data.Settings.Currency}", AutoSize = true }, 1, 0);
-        table.Controls.Add(new Label { Text = "Payment", AutoSize = true }, 0, 1); table.Controls.Add(_amount, 1, 1);
-        table.Controls.Add(new Label { Text = "Reference", AutoSize = true }, 0, 2); table.Controls.Add(_reference, 1, 2);
+        _amount = new NumericUpDown { DecimalPlaces = 2, Maximum = Math.Max(0, invoice.Balance), Value = Math.Max(0, invoice.Balance), Dock = DockStyle.Fill, AccessibleName = "Payment" };
+        _reference = new TextBox { Dock = DockStyle.Fill, Text = "BANK-" + DateTime.Now.ToString("yyyyMMddHHmm"), AccessibleName = "Reference" };
+        table.Controls.Add(new EnterpriseLabelControl { Text = "Outstanding", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        table.Controls.Add(new EnterpriseLabelControl { Text = $"**{invoice.Balance:N2} {store.Data.Settings.Currency}**", MarkupMode = LabelMarkupMode.Markdown, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 1, 0);
+        table.Controls.Add(new EnterpriseLabelControl { Text = "&Payment", LabelFor = _amount, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 1); table.Controls.Add(_amount, 1, 1);
+        table.Controls.Add(new EnterpriseLabelControl { Text = "&Reference", LabelFor = _reference, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 2); table.Controls.Add(_reference, 1, 2);
         _error = new Label { Dock = DockStyle.Bottom, Height = 40, Padding = new Padding(18, 0, 0, 0) };
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 50, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(14, 8, 14, 8) };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
-        var save = new Button { Text = "Post Payment" };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 56, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(14, 8, 14, 8) };
+        var cancel = new EnterpriseButtonControl { Text = "Cancel", Variant = EnterpriseButtonVariant.Outline, Width = 100, Height = 34, DialogResult = DialogResult.Cancel };
+        var save = new EnterpriseButtonControl { Text = "Post Payment", Glyph = "\u2714", Variant = EnterpriseButtonVariant.Success, Width = 150, Height = 34 };
         save.Click += (_, _) =>
         {
             try { SchoolOperations.RecordPayment(store, invoice.Id, _amount.Value, _reference.Text); DialogResult = DialogResult.OK; }
@@ -117,7 +120,7 @@ public sealed class EnrollmentsView : RecordWorkspace<EnrollmentRecord>
 {
     public EnrollmentsView(SchoolStore store) : base(store, "Enrollments")
     {
-        UseFacets(new[] { "Status", "CourseIdLabel" }, new[] { "Grade" });
+        UseFacets(new[] { "Status", "CourseIdLabel" }, new[] { "Grade", "Feedback" });
     }
 }
 
@@ -125,22 +128,61 @@ public sealed class EnrollmentsView : RecordWorkspace<EnrollmentRecord>
 public sealed class CoursesView : RecordWorkspace<CourseRecord>
 {
     private readonly EnterpriseTreeViewControl _tree = new() { Dock = DockStyle.Left, Width = 280, AccessibleName = "Course catalog" };
+    private readonly EnterpriseCarouselControl _showcase = new() { Dock = DockStyle.Fill, Visible = false, Layout = CarouselLayout.Coverflow, ItemSize = new Size(300, 170), AccessibleName = "Course showcase" };
+    private readonly EnterpriseToggleButtonControl _showcaseToggle;
 
     public CoursesView(SchoolStore store) : base(store, "Courses")
     {
         UseCards("Title", "Code", "Department", ("TeacherIdLabel", "Teacher", null), ("Credits", "Credits", null), ("Capacity", "Capacity", null), ("Active", "Active", null));
         Controls.Add(_tree);
         Controls.SetChildIndex(_tree, Controls.GetChildIndex(Grid) + 1);
+        Controls.Add(_showcase);
+        Controls.SetChildIndex(_showcase, Controls.GetChildIndex(Grid));
+        _showcaseToggle = Commands.AddToggle("Showcase", ShowShowcase);
+        if (Commands.Find("Cards") is EnterpriseToggleButtonControl cards) cards.CheckedChanged += (_, _) => { if (cards.Checked) _showcaseToggle.Checked = false; };
+        _showcase.ItemActivated += (_, index) =>
+        {
+            if (_showcase.Items[index] is not CarouselItem { Tag: CourseRecord course }) return;
+            _showcaseToggle.Checked = false;
+            Grid.ClearFilters();
+            Grid.FilterBy("Code", EnterpriseUI.Data.FilterOperator.IsEqualTo, course.Code);
+        };
         _tree.AfterSelect += (_, e) => ApplySelection(e.Node);
         BuildTree();
         Store.Changed += TreeChanged;
         SchoolUi.Apply(this);
     }
 
+    public EnterpriseCarouselControl Showcase => _showcase;
+
+    private void ShowShowcase(bool on)
+    {
+        if (on && Commands.Find("Cards") is EnterpriseToggleButtonControl { Checked: true } cards) cards.Checked = false;
+        _showcase.Visible = on;
+        Grid.Visible = !on && Cards?.Visible != true;
+    }
+
     private void TreeChanged(object? sender, EventArgs e) => BuildTree();
+
+    private static readonly Color[] DepartmentColors = { Color.SteelBlue, Color.SeaGreen, Color.DarkOrange, Color.MediumPurple };
+
+    private void BuildShowcase()
+    {
+        _showcase.Items.Clear();
+        var departments = Store.Data.Courses.Select(item => item.Department).Distinct().OrderBy(item => item).ToList();
+        foreach (var course in Store.Data.Courses.Where(item => item.Active).OrderBy(item => item.Code))
+        {
+            var enrollments = Store.Data.Enrollments.Where(item => item.CourseId == course.Id).ToList();
+            var rated = enrollments.Where(item => item.Feedback > 0).ToList();
+            var teacher = Store.Data.Staff.FirstOrDefault(item => item.Id == course.TeacherId)?.FullName ?? "Unassigned";
+            var rating = rated.Count > 0 ? $"  ·  {rated.Average(item => (double)item.Feedback):0.0}★" : string.Empty;
+            _showcase.Items.Add(new CarouselItem($"{course.Code} · {course.Title}", $"{teacher}  ·  {enrollments.Count(item => item.Status == "Enrolled")}/{course.Capacity} seats{rating}") { Accent = DepartmentColors[Math.Max(0, departments.IndexOf(course.Department)) % DepartmentColors.Length], Tag = course });
+        }
+    }
 
     private void BuildTree()
     {
+        BuildShowcase();
         _tree.BeginUpdate();
         _tree.Nodes.Clear();
         var all = _tree.Nodes.Add("All courses (" + Store.Data.Courses.Count + ")");
@@ -180,11 +222,11 @@ public sealed class TasksView : RecordWorkspace<TaskRecord>
     {
         _board = new Panel { Dock = DockStyle.Fill, Visible = false, Padding = new Padding(16) };
         Controls.Add(_board); _board.BringToFront();
-        AddCommand("Board / List", () =>
+        Commands.AddToggle("Board / List", on =>
         {
-            _board.Visible = !_board.Visible;
-            Grid.Visible = !_board.Visible;
-            if (_board.Visible) BuildBoard();
+            _board.Visible = on;
+            Grid.Visible = !on;
+            if (on) BuildBoard();
         });
         Store.Changed += BoardChanged;
         AddCommand("Complete", () => { if (Grid.FocusedRecord is { } task) Store.Transaction(data => { var record = data.Tasks.Single(item => item.Id == task.Id); record.Status = "Done"; record.Progress = 100; }); });

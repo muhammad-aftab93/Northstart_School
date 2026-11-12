@@ -1,4 +1,5 @@
 using EnterpriseUI.Data;
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Grids;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Services;
@@ -13,10 +14,28 @@ public sealed class AnalyticsView : UserControl
     private sealed record FeeFact(string Department, string Student, double Balance, double OverdueDays);
 
     private readonly SchoolStore _store;
+    private readonly Panel _content = new() { Dock = DockStyle.Fill };
+
+    /// <summary>Only enrollments with a grade inside this range reach the pivot.</summary>
+    public EnterpriseTrackBarControl GradeRange { get; } = new() { Minimum = 0, Maximum = 100, Mode = TrackSelectionMode.Range, Step = 5, LargeChange = 10, MinimumGap = 5, TickStyle = TrackTickStyle.BottomRight, TickFrequency = 25, ValueFormat = "{0:0}%", Dock = DockStyle.Fill, AccessibleName = "Grade range" };
+
+    /// <summary>Attendance marks older than this many days are left out of the attendance heat map.</summary>
+    public EnterpriseTrackBarControl AttendanceWindow { get; } = new() { Minimum = 1, Maximum = 14, Step = 1, SmallChange = 1, LargeChange = 3, Value = 7, TickStyle = TrackTickStyle.BottomRight, TickFrequency = 1, ValueFormat = "{0:0} days", Dock = DockStyle.Fill, AccessibleName = "Attendance window" };
 
     public AnalyticsView(SchoolStore store)
     {
         _store = store; Dock = DockStyle.Fill; Font = SchoolUi.BodyFont;
+        GradeRange.ValueLow = 0; GradeRange.ValueHigh = 100;
+        var filters = new TableLayoutPanel { Dock = DockStyle.Top, Height = 66, ColumnCount = 4, RowCount = 1, Padding = new Padding(20, 4, 20, 0) };
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120)); filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170)); filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        filters.Controls.Add(new EnterpriseLabelControl { Text = "&Grade range", LabelFor = GradeRange, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        filters.Controls.Add(GradeRange, 1, 0);
+        filters.Controls.Add(new EnterpriseLabelControl { Text = "Attendance &window", LabelFor = AttendanceWindow, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 2, 0);
+        filters.Controls.Add(AttendanceWindow, 3, 0);
+        GradeRange.ValueCommitted += (_, _) => Build();
+        AttendanceWindow.ValueCommitted += (_, _) => Build();
+        Controls.Add(_content); Controls.Add(filters); Controls.Add(SchoolUi.Heading("Analytics"));
         Build();
         store.Changed += Changed;
     }
@@ -27,6 +46,9 @@ public sealed class AnalyticsView : UserControl
     public EnterpriseHeatMapControl? RoomMap { get; private set; }
 
     private void Changed(object? sender, EventArgs e) => Build();
+
+    /// <summary>Rebuilds the charts for the current slider positions.</summary>
+    public void ApplyFilters() => Build();
 
     private static Panel Frame(string caption, Control content)
     {
@@ -39,12 +61,13 @@ public sealed class AnalyticsView : UserControl
 
     private void Build()
     {
-        foreach (Control control in Controls.Cast<Control>().ToArray()) control.Dispose();
+        foreach (Control control in _content.Controls.Cast<Control>().ToArray()) control.Dispose();
         var data = _store.Data;
         var courses = data.Courses.ToDictionary(item => item.Id);
         var students = data.Students.ToDictionary(item => item.Id);
 
-        var enrollments = data.Enrollments.Select(item => new EnrollmentFact(courses[item.CourseId].Department, courses[item.CourseId].Code, item.Status, item.Grade, students[item.StudentId].FullName)).ToList();
+        var low = (decimal)GradeRange.ValueLow; var high = (decimal)GradeRange.ValueHigh;
+        var enrollments = data.Enrollments.Where(item => item.Grade >= low && item.Grade <= high).Select(item => new EnrollmentFact(courses[item.CourseId].Department, courses[item.CourseId].Code, item.Status, item.Grade, students[item.StudentId].FullName)).ToList();
         Pivot = new EnterprisePivotGridControl { LabelWidth = 120, ColumnWidth = 96, AccessibleName = "Enrollments by department, course and status" };
         Pivot.RowFields.Add("Department"); Pivot.RowFields.Add("Course"); Pivot.ColumnFields.Add("Status");
         Pivot.Values.Add(new PivotValueField("Student", AggregateFunction.Count, "Students", "N0"));
@@ -52,7 +75,8 @@ public sealed class AnalyticsView : UserControl
         Pivot.DataSource = enrollments;
 
         AttendanceMap = new EnterpriseHeatMapControl { Title = "Attendance marks", ValueFormat = "N0", AccessibleName = "Attendance marks per course and status" };
-        AttendanceMap.Bind(data.Attendance.Select(item => new AttendanceFact(courses[item.CourseId].Code, item.Status)).ToList(), "Course", "Status", null, HeatMapAggregate.Count);
+        var since = DateTime.Today.AddDays(1 - (int)AttendanceWindow.Value);
+        AttendanceMap.Bind(data.Attendance.Where(item => item.Date.Date >= since).Select(item => new AttendanceFact(courses[item.CourseId].Code, item.Status)).ToList(), "Course", "Status", null, HeatMapAggregate.Count);
 
         var fees = data.Invoices.Where(item => item.Balance > 0)
             .Select(item => new FeeFact(students[item.StudentId].Department, students[item.StudentId].FullName, (double)item.Balance, Math.Max(0, (DateTime.Today - item.DueOn.Date).TotalDays))).ToList();
@@ -79,7 +103,7 @@ public sealed class AnalyticsView : UserControl
         grid.Controls.Add(Frame("Attendance by course", AttendanceMap), 1, 0);
         grid.Controls.Add(Frame("Outstanding fees (color = days overdue)", FeeMap), 0, 1);
         grid.Controls.Add(Frame("Room bookings", RoomMap), 1, 1);
-        Controls.Add(grid); Controls.Add(SchoolUi.Heading("Analytics")); SchoolUi.Apply(this);
+        _content.Controls.Add(grid); SchoolUi.Apply(this);
     }
 
     protected override void Dispose(bool disposing) { if (disposing) _store.Changed -= Changed; base.Dispose(disposing); }

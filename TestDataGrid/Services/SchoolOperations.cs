@@ -19,6 +19,26 @@ public static class SchoolOperations
 
     public static int NextId<T>(SchoolData data) where T : SchoolRecord => data.Records<T>().Select(record => record.Id).DefaultIfEmpty().Max() + 1;
 
+    /// <summary>Creates the student, the chosen enrollments and the tuition invoice as one change; any rule violation leaves the data untouched.</summary>
+    public static StudentRecord AdmitStudent(SchoolStore store, StudentRecord student, IReadOnlyCollection<int> courseIds, decimal tuition)
+    {
+        if (courseIds.Count == 0) throw new InvalidOperationException("Choose at least one course.");
+        var admitted = SchoolStore.Clone(student);
+        store.Transaction(data =>
+        {
+            admitted.Id = NextId<StudentRecord>(data);
+            if (string.IsNullOrWhiteSpace(admitted.StudentCode)) admitted.StudentCode = $"ST-{admitted.Id:D4}";
+            admitted.EnrolledOn = DateTime.Today;
+            data.Students.Add(admitted);
+            var enrollmentId = NextId<EnrollmentRecord>(data);
+            foreach (var courseId in courseIds) data.Enrollments.Add(new EnrollmentRecord { Id = enrollmentId++, StudentId = admitted.Id, CourseId = courseId, EnrolledOn = DateTime.Today });
+            var invoiceId = NextId<InvoiceRecord>(data);
+            data.Invoices.Add(new InvoiceRecord { Id = invoiceId, Number = $"INV-{DateTime.Today.Year}-{invoiceId:D4}", StudentId = admitted.Id, Description = "Admission tuition", Amount = tuition });
+            data.Audit.Add(new AuditEntry { Action = "Admit", Entity = nameof(StudentRecord), RecordId = admitted.Id, Detail = $"{admitted.FullName}: {courseIds.Count} courses, {tuition:N2} invoiced" });
+        });
+        return admitted;
+    }
+
     public static void SaveRecord<T>(SchoolStore store, T record) where T : SchoolRecord
     {
         store.Transaction(data =>
@@ -85,8 +105,8 @@ public static class SchoolOperations
                 throw new InvalidOperationException("Courses need a code, title, teacher, positive capacity and 1-30 credits.");
         if (data.Courses.GroupBy(item => item.Code, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1)) throw new InvalidOperationException("Course codes must be unique.");
         foreach (var enrollment in data.Enrollments)
-            if (!data.Students.Any(item => item.Id == enrollment.StudentId) || !data.Courses.Any(item => item.Id == enrollment.CourseId) || enrollment.Grade is < 0 or > 100 || enrollment.Status is not ("Enrolled" or "Completed" or "Withdrawn"))
-                throw new InvalidOperationException("Enrollments need valid student/course references and grades from 0 to 100.");
+            if (!data.Students.Any(item => item.Id == enrollment.StudentId) || !data.Courses.Any(item => item.Id == enrollment.CourseId) || enrollment.Grade is < 0 or > 100 || enrollment.Feedback is < 0 or > 5 || enrollment.Feedback * 2 != decimal.Truncate(enrollment.Feedback * 2) || enrollment.Status is not ("Enrolled" or "Completed" or "Withdrawn"))
+                throw new InvalidOperationException("Enrollments need valid student/course references, grades from 0 to 100 and a course rating from 0 to 5 in half steps.");
         if (data.Enrollments.GroupBy(item => (item.StudentId, item.CourseId)).Any(group => group.Count() > 1)) throw new InvalidOperationException("A student can enroll in a course only once.");
         foreach (var course in data.Courses)
             if (data.Enrollments.Count(item => item.CourseId == course.Id && item.Status == "Enrolled") > course.Capacity) throw new InvalidOperationException($"{course.Code} has reached its capacity.");

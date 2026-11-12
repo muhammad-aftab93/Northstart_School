@@ -49,10 +49,10 @@ public sealed class RollCallDialog : Form
         right.Controls.Add(new Label { Text = "Tick the students who are present", Dock = DockStyle.Top, Height = 26, Font = new Font(Font, FontStyle.Bold) });
 
         var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(18, 10, 18, 10) };
-        var cancel = new Button { Text = "Cancel", Width = 100, Height = 34, DialogResult = DialogResult.Cancel };
-        var save = new Button { Text = "Save roll call", Width = 130, Height = 34 };
-        var none = new Button { Text = "Untick all", Width = 100, Height = 34, Margin = new Padding(24, 3, 3, 3) };
-        var all = new Button { Text = "Tick all", Width = 100, Height = 34 };
+        var cancel = new EnterpriseButtonControl { Text = "Cancel", Variant = EnterpriseButtonVariant.Outline, Width = 100, Height = 34, DialogResult = DialogResult.Cancel };
+        var save = new EnterpriseButtonControl { Text = "Save roll call", Glyph = "\u2714", Variant = EnterpriseButtonVariant.Success, Width = 160, Height = 34 };
+        var none = new EnterpriseButtonControl { Text = "Untick all", Variant = EnterpriseButtonVariant.Outline, Width = 110, Height = 34, Margin = new Padding(24, 3, 3, 3) };
+        var all = new EnterpriseButtonControl { Text = "Tick all", Variant = EnterpriseButtonVariant.Outline, Width = 110, Height = 34 };
         save.Click += (_, _) => Save();
         none.Click += (_, _) => StudentList.UncheckAll();
         all.Click += (_, _) => StudentList.CheckAll();

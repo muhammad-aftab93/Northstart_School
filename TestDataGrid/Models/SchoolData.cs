@@ -52,6 +52,9 @@ public sealed class EnrollmentRecord : SchoolRecord
     public DateTime EnrolledOn { get; set; } = DateTime.Today;
     public string Status { get; set; } = "Enrolled";
     public decimal Grade { get; set; }
+
+    /// <summary>The student's rating of the course from 0 (not rated) to 5 in half steps.</summary>
+    public decimal Feedback { get; set; }
 }
 
 public sealed class AttendanceRecord : SchoolRecord
@@ -142,6 +145,9 @@ public sealed class SchoolSettings
     [Display(Name = "Currency code", GroupName = "Lists", Order = 4, Description = "Three letters, for example EUR.")]
     [Required, StringLength(3, MinimumLength = 3)]
     public string Currency { get; set; } = "EUR";
+
+    [Display(Name = "Show page tips", GroupName = "Lists", Order = 5, Description = "Shows a short tip the first time each screen is opened.")]
+    public bool ShowTips { get; set; } = true;
 }
 
 public sealed class SchoolData

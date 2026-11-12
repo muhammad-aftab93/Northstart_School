@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Theming;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Models;
@@ -66,25 +67,27 @@ public sealed class SettingsView : UserControl
         right.Controls.Add(_preferences);
         right.Controls.Add(new Label { Text = "Workspace", Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI", 11f, FontStyle.Bold) });
 
-        var toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(18, 8, 8, 8) };
-        void Command(string title, Action action)
-        {
-            var button = new ToolStripButton(title);
-            button.Click += (_, _) => { try { action(); } catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Error); } };
-            toolbar.Items.Add(button);
-        }
+        var toolbar = new CommandBar();
+        void Command(string title, Action action) => toolbar.AddCommand(title, action);
         Command("Theme Editor", () => { using var dialog = new Dialogs.SchoolThemeDialog(); dialog.ShowDialog(FindForm()); });
-        Command("Backup", () => { using var dialog = new SaveFileDialog { Filter = "School backup|*.json", FileName = "northstar-backup.json" }; if (dialog.ShowDialog(FindForm()) == DialogResult.OK) _store.Backup(dialog.FileName); });
+        Command("Backup", () =>
+        {
+            using var dialog = new SaveFileDialog { Filter = "School backup|*.json", FileName = "northstar-backup.json" };
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+            using (SchoolUi.Busy(this, "Writing backup\u2026")) _store.Backup(dialog.FileName);
+            SchoolUi.Window(this)?.Notify("Backup saved", dialog.FileName, NotificationSeverity.Success, null);
+        });
         Command("Restore", () =>
         {
             using var dialog = new OpenFileDialog { Filter = "School backup|*.json" };
             if (dialog.ShowDialog(FindForm()) == DialogResult.OK && MessageBox.Show(FindForm(), "Replace current school records with this backup?", "Restore Backup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
             {
-                _store.Restore(dialog.FileName);
+                using (SchoolUi.Busy(this, "Restoring backup\u2026")) _store.Restore(dialog.FileName);
                 if (ThemeManager.Instance.AvailableThemes.Any(theme => theme.Name == _store.Data.Settings.Theme)) ThemeManager.Instance.ApplyTheme(_store.Data.Settings.Theme);
                 var fresh = SchoolStore.Clone(_store.Data.Settings);
                 _entry.Entity = fresh;
                 _preferences.SelectedObject = new WorkspacePreferences(_store, fresh);
+                SchoolUi.Window(this)?.Notify("Backup restored", "The school records were replaced by the backup.", NotificationSeverity.Success, null);
             }
         });
         Command("Open Data Folder", () => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.GetDirectoryName(_store.FilePath)!) { UseShellExecute = true }));

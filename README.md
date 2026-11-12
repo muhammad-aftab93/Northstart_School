@@ -20,6 +20,12 @@ Northstar School is an offline Windows desktop sample for managing day-to-day sc
 - Search, filtering, sorting, grouping, paging, column layouts, and summaries
 - Validated settings form, theme selection in a property inspector, theme JSON editing, and control explorer
 - Backup and restore from Settings
+- Assistant: a chat that answers questions from the live records and a prompt that drafts fee reminders, attendance notes, course summaries and announcements (offline, no AI service needed)
+- Admit Student wizard: details, courses with seat checks, tuition, review; creates the student, enrollments and invoice in one step
+- Course ratings (half stars) on enrollments, a course showcase gallery, and rotating announcements on the overview
+- Tray icon with an unread count and toasts for overdue fees, due tasks, today's lessons and recorded payments
+- Voice search and note dictation (Windows speech recognition), inline writing help in notes, smart paste of contact details
+- Touch keyboard that follows the focused text box, page tips, and a busy indicator for exports and backups
 
 The **Grid Workshop** is a separate feature showcase; it is not the school’s operational student screen.
 
@@ -28,6 +34,7 @@ The **Grid Workshop** is a separate feature showcase; it is not the school’s o
 - Windows 10 or later
 - .NET 10 SDK
 - `EnterpriseUI.WinForms` version `1.1.0` available from a configured NuGet package source
+- A Windows speech recognizer (installed with most Windows languages) for voice search and dictation; without one the Voice and Dictate buttons explain why they are unavailable
 
 ## Run
 

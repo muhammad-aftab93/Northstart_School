@@ -1,4 +1,5 @@
 using EnterpriseUI.Data;
+using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Grids;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
@@ -47,7 +48,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
 {
     protected readonly SchoolStore Store;
     public SchoolRecordGrid<T> Grid { get; }
-    protected readonly ToolStrip Commands;
+    protected readonly CommandBar Commands;
     private readonly ContextMenuStrip _menu = new();
     private T? _context;
     private readonly TextBox _search = new();
@@ -75,7 +76,8 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
                 column.Field = field.Name + "Label";
             }
             if (type == typeof(DateTime)) column.FormatString = field.Name.EndsWith("At", StringComparison.Ordinal) ? "g" : "d";
-            if (type == typeof(decimal)) { column.FormatString = "N2"; column.Alignment = ColumnTextAlignment.Right; column.FooterSummaries.Add(new GridColumnSummary(EnterpriseUI.Data.AggregateFunction.Sum, "{0:N2}")); }
+            if (field.Rating) { column.FormatString = "0.0\u2605"; column.Alignment = ColumnTextAlignment.Center; column.FooterSummaries.Add(new GridColumnSummary(EnterpriseUI.Data.AggregateFunction.Average, "{0:N1}\u2605")); }
+            else if (type == typeof(decimal)) { column.FormatString = "N2"; column.Alignment = ColumnTextAlignment.Right; column.FooterSummaries.Add(new GridColumnSummary(EnterpriseUI.Data.AggregateFunction.Sum, "{0:N2}")); }
             Grid.Columns.Add(column);
         }
         Grid.Columns.Add(new GridCommandColumn { Field = "EditAction", Title = "Actions", Expression = "'Edit'", Width = 90, MinWidth = 90, MaxWidth = 90, Reorderable = false, CanHide = false, AllowColumnChooser = false });
@@ -83,43 +85,35 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         Grid.EditRequested += Edit;
         Grid.ContextRequested += (record, point) => { _context = record; _menu.Show(Grid, point); };
 
-        Commands = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(16, 6, 12, 6), AutoSize = true };
-        AddCommand("Add", () => Edit(CreateRecord()));
-        AddCommand("Edit", () => { if (Grid.FocusedRecord is { } record) Edit(record); });
-        AddCommand("Delete", () => { if (Grid.FocusedRecord is { } record) Delete(record); });
-        Commands.Items.Add(new ToolStripSeparator());
-        var export = new ToolStripDropDownButton("Export");
-        foreach (var extension in new[] { "xlsx", "csv", "pdf", "html", "json", "xml" })
-        {
-            var format = extension;
-            export.DropDownItems.Add(extension.ToUpperInvariant(), null, async (_, _) => await ExportAsync(format));
-        }
-        Commands.Items.Add(export);
-        AddCommand("Print Preview", () => Grid.ShowPrintPreviewDialog());
-        AddCommand("Fit Columns", Grid.BestFitAllColumns);
-        AddCommand("Clear Filters", () =>
+        Commands = new CommandBar();
+        Commands.AddCommand("Add", () => Edit(CreateRecord()), "+", EnterpriseButtonVariant.Primary);
+        Commands.AddCommand("Edit", () => { if (Grid.FocusedRecord is { } record) Edit(record); });
+        Commands.AddCommand("Delete", () => { if (Grid.FocusedRecord is { } record) Delete(record); });
+        Commands.AddSeparator();
+        Commands.AddSplit("Export", () => _ = ExportAsync("xlsx"), new[] { "xlsx", "csv", "pdf", "html", "json", "xml" }.Select(format => (format.ToUpperInvariant(), (Action)(() => _ = ExportAsync(format)))));
+        Commands.AddCommand("Clear Filters", () =>
         {
             _search.Clear(); Grid.ClearFilters(); Grid.ClearSort();
             _builderFilter = null; _facetFilters.Clear(); _facets?.ClearAll();
         });
-        AddCommand("Filter Builder", () =>
+        Commands.AddCommand("Filter Builder", () =>
         {
             var descriptor = EnterpriseDataFilter.Edit(FindForm(), typeof(T), _builderFilter);
             if (_builderFilter != null) Grid.RemoveFilter(_builderFilter);
             _builderFilter = descriptor;
             if (descriptor != null) Grid.AddFilter(descriptor);
         });
-        var view = new ToolStripDropDownButton("View");
-        view.DropDownItems.Add("Expand Groups", null, (_, _) => Grid.ExpandAllGroups());
-        view.DropDownItems.Add("Collapse Groups", null, (_, _) => Grid.CollapseAllGroups());
-        view.DropDownItems.Add("Save Layout", null, (_, _) => ManageLayout(true));
-        view.DropDownItems.Add("Load Layout", null, (_, _) => ManageLayout(false));
-        Commands.Items.Add(view);
+        Commands.AddMenu("View",
+            ("Expand Groups", Grid.ExpandAllGroups), ("Collapse Groups", Grid.CollapseAllGroups), ("Fit Columns", Grid.BestFitAllColumns), ("Print Preview", () => Grid.ShowPrintPreviewDialog()),
+            ("Save Layout", () => ManageLayout(true)), ("Load Layout", () => ManageLayout(false)));
 
-        _search.Width = 230;
+        _search.Width = 200;
+        _search.Margin = new Padding(0, 6, 4, 0);
         _search.PlaceholderText = "Search " + title.ToLowerInvariant();
         _search.AccessibleName = "Search " + title;
-        Commands.Items.Add(new ToolStripControlHost(_search));
+        Commands.AddControl("Search", _search);
+        var voice = Commands.AddControl("Voice search", new EnterpriseSpeechToTextButton { Text = "Voice", Target = _search, Width = Commands.LogicalToDeviceUnits(118), Provider = SchoolUi.Speech, AccessibleName = "Voice search", ShowPartialText = false, InsertMode = SpeechInsertMode.Replace });
+        voice.Error += (_, exception) => SchoolUi.Hint(voice, exception.Message, "Voice input is unavailable", NotificationSeverity.Warning);
         _debounce = new System.Windows.Forms.Timer { Interval = 180 };
         _search.TextChanged += (_, _) => { _debounce.Stop(); _debounce.Start(); };
         _debounce.Tick += (_, _) => { _debounce.Stop(); Grid.SearchPanelText = _search.Text; if (_cards != null) _cards.FilterText = _search.Text; };
@@ -134,12 +128,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         Reload();
     }
 
-    protected void AddCommand(string title, Action action)
-    {
-        var button = new ToolStripButton(title);
-        button.Click += (_, _) => { try { action(); } catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, _title, MessageBoxButtons.OK, MessageBoxIcon.Warning); } };
-        Commands.Items.Add(button);
-    }
+    protected void AddCommand(string title, Action action) => Commands.AddCommand(title, action);
 
     public EnterpriseCardViewControl? Cards => _cards;
     public EnterpriseFilterViewControl? Facets => _facets;
@@ -155,7 +144,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         _cards.DataSource = Store.Data.Records<T>();
         Controls.Add(_cards);
         Controls.SetChildIndex(_cards, Controls.GetChildIndex(Grid));
-        AddCommand("Cards / Grid", () => { _cards.Visible = !_cards.Visible; Grid.Visible = !_cards.Visible; });
+        Commands.AddToggle("Cards", on => { _cards.Visible = on; Grid.Visible = !on; });
     }
 
     /// <summary>Adds a faceted filter panel (checklists with counts, optional ranges) that filters the grid.</summary>
@@ -168,7 +157,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         _facets.FilterChanged += (_, _) => ApplyFacets();
         Controls.Add(_facets);
         Controls.SetChildIndex(_facets, Controls.GetChildIndex(Grid) + 1);
-        AddCommand("Facets", () => _facets.Visible = !_facets.Visible);
+        Commands.AddToggle("Facets", on => _facets.Visible = on);
     }
 
     private static string FacetTitle(string field)
@@ -231,6 +220,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
     {
         using var dialog = new SaveFileDialog { Filter = format.ToUpperInvariant() + "|*." + format, FileName = _title.ToLowerInvariant() + "." + format, DefaultExt = format };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+        using var busy = SchoolUi.Busy(this, "Exporting " + _title.ToLowerInvariant() + "\u2026");
         try { await Grid.ExportToFileAsync(dialog.FileName, new GridExportOptions { Title = _title }); }
         catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
