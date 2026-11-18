@@ -6,7 +6,7 @@ using TestDataGrid.Views;
 namespace TestDataGrid.Dialogs;
 
 /// <summary>Takes the register of one course for one day: pick the course, untick the students who are absent, save.</summary>
-public sealed class RollCallDialog : Form
+public sealed class RollCallDialog : EnterpriseForm
 {
     private sealed record Choice(int Id, string Label);
 
@@ -25,12 +25,13 @@ public sealed class RollCallDialog : Form
         _store = store;
         Text = "Roll Call";
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        AllowResize = false;
+        TitleBar.ShowIcon = false;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
         Font = SchoolUi.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(820, 540);
+        ClientSize = new Size(820, 540 + CaptionHeight);
 
         DateChoice.SetItems(_dates.Select(date => date == DateTime.Today ? "Today \u00b7 " + date.ToString("ddd dd MMM yyyy") : date.ToString("ddd dd MMM yyyy")));
         DateChoice.SelectedIndex = 0;

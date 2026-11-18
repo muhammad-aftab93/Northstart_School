@@ -60,7 +60,47 @@ public sealed class ControlWorkshopView : UserControl
         more.DropDownItems.Add("ZIP round-trip", null, (_, _) => VerifyZipRoundTrip());
         more.DropDownItems.Add("Message preview", null, (_, _) => EnterpriseMessageBox.ShowMessage("This message is rendered by the themed dialog.", "Control Explorer", MessageBoxButtons.OKCancel, MessageBoxIcon.Information, "Additional diagnostic details are available here.", FindForm()));
         strip.Items.Add(more);
+        strip.Items.Add(CreateShellMenu());
         return strip;
+    }
+
+    private ToolStripDropDownButton CreateShellMenu()
+    {
+        var shell = new ToolStripDropDownButton("Shell");
+        shell.DropDownItems.Add("Task dialog", null, (_, _) => ShowTaskDialogSample());
+        shell.DropDownItems.Add("Markup dialog", null, (_, _) => EnterpriseMarkupDialog.ShowMarkup("**Markup dialog** shows *formatted* text, `code` and [links](https://example.org).", "Control Explorer", MessageBoxButtons.OKCancel, MessageBoxIcon.Information, owner: FindForm()));
+        shell.DropDownItems.Add("About box", null, (_, _) => { using var about = new EnterpriseAboutBox(); about.LoadFromAssembly(typeof(EnterpriseDataGrid).Assembly); about.ShowDialog(FindForm()); });
+        shell.DropDownItems.Add("Desktop alert", null, (_, _) => new EnterpriseDesktopAlertWindow(new EnterpriseUI.Notifications.EnterpriseDesktopAlert { CaptionText = "Control Explorer", ContentText = "Desktop alerts stack in the corner, can be pinned and never take focus.", AutoCloseDelaySeconds = 8 }).ShowAlert());
+        shell.DropDownItems.Add("Toast", null, (_, _) => SchoolUi.Window(this)?.Toast("Control Explorer", "A toast confirms an action without interrupting."));
+        shell.DropDownItems.Add("Overlay (2 seconds)", null, (_, _) => ShowOverlaySample());
+        shell.DropDownItems.Add("Flyout", null, (_, _) => ShowFlyoutSample());
+        return shell;
+    }
+
+    private static void ShowTaskDialogSample()
+    {
+        var model = new EnterpriseUI.Layout.EnterpriseTaskDialog { WindowTitle = "Control Explorer", MainInstruction = "How should the sample continue?", Content = "Task dialogs offer **command links**, a verification box and expandable details.", VerificationText = "Remember my choice", ExpandedInformation = "The chosen command and the checkbox are written back to the model." };
+        model.CommandLinks.Add(new("fast", "Continue quickly", "Skip the optional checks"));
+        model.CommandLinks.Add(new("safe", "Continue carefully", "Run every check first"));
+        using var dialog = new EnterpriseTaskDialogForm(model) { DialogIcon = MessageBoxIcon.Question, CommonButtons = EnterpriseTaskDialogButtons.Cancel, FooterText = "Control Explorer sample" };
+        dialog.Execute();
+    }
+
+    private void ShowOverlaySample()
+    {
+        var overlay = new EnterpriseOverlay { Caption = "Rendering preview\u2026", Indicator = EnterpriseOverlayIndicator.Dots };
+        overlay.Show(_previewContent);
+        var timer = new System.Windows.Forms.Timer { Interval = 2000 };
+        timer.Tick += (_, _) => { timer.Dispose(); overlay.Hide(); overlay.Dispose(); };
+        timer.Start();
+    }
+
+    private void ShowFlyoutSample()
+    {
+        var flyout = new EnterpriseFlyout { Text = "Inspector", FlyoutSize = 380, IsModal = false };
+        flyout.Content.Controls.Add(new EnterprisePropertyGridControl { Dock = DockStyle.Fill, SelectedObject = _properties.SelectedObject, AccessibleName = "Inspector" });
+        flyout.FlyoutClosed += (_, _) => flyout.Dispose();
+        flyout.ShowFlyout(_preview);
     }
 
     private void InspectPreview(EnterpriseHierarchyToolForm inspector)
@@ -74,11 +114,21 @@ public sealed class ControlWorkshopView : UserControl
 
     private void ShowShapeEditor()
     {
-        using var window = new Form { Text = "Shape Editor", ClientSize = new Size(520, 380), StartPosition = FormStartPosition.CenterParent };
+        using var window = new EnterpriseForm { Text = "Shape Editor", ClientSize = new Size(520, 430 + 36), StartPosition = FormStartPosition.CenterParent };
         var editor = new EnterpriseShapeEditor { Dock = DockStyle.Fill };
         editor.SetPoints(new[] { new PointF(0.5f, 0.1f), new PointF(0.9f, 0.5f), new PointF(0.5f, 0.9f), new PointF(0.1f, 0.5f) });
         editor.SetSegmentCurved(0, true);
+        var preview = new EnterpriseButtonControl { Text = "Preview as window shape", Dock = DockStyle.Bottom, Height = 46 };
+        preview.Click += (_, _) =>
+        {
+            using var shaped = new EnterpriseShapedForm { ClientSize = new Size(420, 320), StartPosition = FormStartPosition.CenterParent, KeyPreview = true };
+            shaped.SetShape(editor);
+            shaped.Controls.Add(new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Text = "This window has the shape you drew.\nDrag it by its body; Esc closes." });
+            shaped.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) shaped.Close(); };
+            shaped.ShowDialog(window);
+        };
         window.Controls.Add(editor);
+        window.Controls.Add(preview);
         window.ShowDialog(FindForm());
     }
 
@@ -86,7 +136,7 @@ public sealed class ControlWorkshopView : UserControl
     {
         using var files = new EnterpriseFileDialog { Title = "Open an image", Filter = "Image files|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff|All files|*.*" };
         if (files.ShowOpenDialog(FindForm()) != DialogResult.OK) return;
-        using var window = new Form { Text = Path.GetFileName(files.FileName), ClientSize = new Size(850, 600), StartPosition = FormStartPosition.CenterParent };
+        using var window = new EnterpriseForm { Text = Path.GetFileName(files.FileName), ClientSize = new Size(850, 600 + 36), StartPosition = FormStartPosition.CenterParent };
         var viewer = new EnterprisePictureBoxControl { Dock = DockStyle.Fill };
         viewer.LoadImage(files.FileName);
         window.Controls.Add(viewer);

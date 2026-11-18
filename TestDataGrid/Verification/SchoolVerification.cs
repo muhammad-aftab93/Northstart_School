@@ -117,6 +117,7 @@ internal static class SchoolVerification
                     EnterpriseUI.Theming.ThemeManager.Instance.ApplyTheme(currentTheme);
                     await VerifyControlsAsync(main, store, file, currentTheme.Name, Check);
                     await VerifyInteractiveControlsAsync(main, store, Check);
+                    await VerifyShellAsync(main, store, Check);
                     main.Navigate("Tasks");
                     var taskToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
                     taskToolbar.PerformCommand("Board / List");
@@ -318,6 +319,48 @@ internal static class SchoolVerification
         {
             check(true, "Windows speech recognizer is not installed on this machine; dictation reports it");
         }
+    }
+
+    private static async Task VerifyShellAsync(MainForm main, SchoolStore store, Action<bool, string> check)
+    {
+        main.Navigate("Overview");
+        check(main.ToolbarItems.Select(item => item.Id).Intersect(new[] { "file", "view", "help", "admit", "rollcall", "alerts" }).Count() == 6, "Title bar offers menus, quick actions and notifications");
+        check(main.ShowSearch && main.StatusBar.Panels["records"]!.Text.StartsWith(store.Data.Students.Count.ToString("N0"), StringComparison.Ordinal), "Status bar counts the students");
+
+        main.Notify("Shell check", "Unread alert", NotificationSeverity.Info, "Tasks");
+        check(main.StatusBar.Panels["alerts"]!.Text.Contains("new alert", StringComparison.Ordinal) && main.ToolbarItems.Single(item => item.Id == "alerts").Text.Length > 0, "Status bar and title bar show the unread count");
+        main.ToggleNotifications();
+        await Task.Delay(300);
+        var flyout = main.NotificationFlyout;
+        check(flyout is { IsOpen: true } && FindControls(flyout).OfType<NotificationCenterPanel>().Single().List.Items.Count == main.Tray.Center.Items.Count, "Notification centre flyout lists the history");
+        main.ToggleNotifications();
+        await Task.Delay(300);
+        check(main.NotificationFlyout == null, "Notification centre closes again");
+
+        var before = FindControls(main).OfType<EnterpriseButtonControl>().Count();
+        main.AskAssistant("overdue fees");
+        for (var attempt = 0; attempt < 50 && ((AssistantView)main.CurrentView).Chat.Conversation.Messages.Count < 3; attempt++) await Task.Delay(100);
+        check(main.CurrentView is AssistantView && ((AssistantView)main.CurrentView).Chat.Conversation.Messages.Count >= 3 && before >= 0, "Title bar search asks the assistant");
+
+        main.Toast("Export finished", "report.pdf");
+        check(main.StatusBar.Panels["status"]!.Text.Contains("Export finished", StringComparison.Ordinal), "Confirmations reach the status bar when toasts are off");
+
+        var window = main.OpenWorkspaceWindow("Finance");
+        window.OpenPage("Students");
+        window.OpenPage("Finance");
+        check(window.Tabs.Count == 2 && window.SelectedTab!.Title == "Finance" && window.SelectedTab.Content is FinanceView, "Workspace window opens each screen once in a tab");
+        window.Show();
+        var detached = window.DetachTab(window.Tabs[1], new Point(-3000, 40));
+        check(detached is WorkspaceWindow && window.Tabs.Count == 1 && detached!.Tabs.Count == 1, "A tab can be dragged out into its own window");
+        check(SchoolUi.Window(detached!.Tabs[0].Content!) == main, "Screens in detached windows still reach the main window");
+        detached.Close();
+        window.Close();
+
+        using var widget = new LessonWidget(store);
+        var lesson = store.Data.Lessons.OrderBy(item => item.StartsAt).First();
+        var text = LessonWidget.Describe(store.Data, lesson.StartsAt.AddMinutes(5));
+        check(text.Contains("Now:", StringComparison.Ordinal) && text.Contains("min left", StringComparison.Ordinal) && widget.Shape == EnterpriseFormShape.RoundedRectangle, "Lesson widget describes the running lesson");
+        check(store.Data.Settings.ShowBriefing, "Start-of-day briefing is on by default");
     }
 
     private static void Capture(Control control, string name)

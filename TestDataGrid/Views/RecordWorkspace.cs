@@ -192,9 +192,29 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
 
     protected void Delete(T record)
     {
-        if (MessageBox.Show(FindForm(), $"Delete record #{record.Id}?", "Confirm Deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-        try { SchoolOperations.DeleteRecord(Store, record); }
-        catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, "Cannot Delete", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        var canArchive = typeof(T).GetProperty("Active") != null;
+        var model = new EnterpriseUI.Layout.EnterpriseTaskDialog
+        {
+            WindowTitle = "Remove " + _title.ToLowerInvariant(),
+            MainInstruction = $"What should happen to record #{record.Id}?",
+            Content = canArchive ? "Archiving keeps the history and can be undone with **Archive / Activate**." : "Records that other records still refer to cannot be deleted."
+        };
+        if (canArchive) model.CommandLinks.Add(new("archive", "Archive", "Mark the record inactive; related records stay intact"));
+        model.CommandLinks.Add(new("delete", "Delete permanently", "Remove the record from the school data"));
+        using (var dialog = new EnterpriseTaskDialogForm(model) { DialogIcon = MessageBoxIcon.Warning, CommonButtons = EnterpriseTaskDialogButtons.Cancel })
+            dialog.Execute(FindForm());
+        try
+        {
+            if (model.SelectedCommandId == "archive")
+                Store.Transaction(data =>
+                {
+                    var item = data.Records<T>().Single(candidate => candidate.Id == record.Id);
+                    typeof(T).GetProperty("Active")!.SetValue(item, false);
+                    data.Audit.Add(new AuditEntry { Action = "Archive", Entity = _title, RecordId = record.Id });
+                });
+            else if (model.SelectedCommandId == "delete") SchoolOperations.DeleteRecord(Store, record);
+        }
+        catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Cannot Remove", MessageBoxIcon.Warning); }
     }
 
     public void Reload()
@@ -221,8 +241,8 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         using var dialog = new SaveFileDialog { Filter = format.ToUpperInvariant() + "|*." + format, FileName = _title.ToLowerInvariant() + "." + format, DefaultExt = format };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
         using var busy = SchoolUi.Busy(this, "Exporting " + _title.ToLowerInvariant() + "\u2026");
-        try { await Grid.ExportToFileAsync(dialog.FileName, new GridExportOptions { Title = _title }); }
-        catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        try { await Grid.ExportToFileAsync(dialog.FileName, new GridExportOptions { Title = _title }); SchoolUi.Toast(this, "Export finished", Path.GetFileName(dialog.FileName), dialog.FileName); }
+        catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Export"); }
     }
     private void ManageLayout(bool save)
     {

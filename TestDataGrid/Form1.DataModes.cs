@@ -214,7 +214,7 @@ public partial class Form1
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (!_verificationMode && dataGrid.HasPendingChanges && MessageBox.Show(this, "Discard pending changes and close?", "Pending Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        if (!_verificationMode && dataGrid.HasPendingChanges && Notice("Discard pending changes and close?", "Pending Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             e.Cancel = true;
         base.OnFormClosing(e);
     }

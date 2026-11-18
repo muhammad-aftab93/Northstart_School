@@ -1,10 +1,11 @@
 using System.Net.Mail;
 using EnterpriseUI.Grids;
 using EnterpriseUI.Theming;
+using EnterpriseUI.WinForms;
 
 namespace TestDataGrid;
 
-public sealed class StudentEditDialog : Form
+public sealed class StudentEditDialog : EnterpriseForm
 {
     private readonly GridRowEditSession<Student> _session;
     private readonly TextBox _nameInput;
@@ -21,7 +22,8 @@ public sealed class StudentEditDialog : Form
 
         Text = "Edit Student";
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        AllowResize = false;
+        TitleBar.ShowIcon = false;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
@@ -30,7 +32,7 @@ public sealed class StudentEditDialog : Form
         BackColor = surface;
         ForeColor = text;
         var editableColumns = columns.Where(column => column.IsEditable && column is not GridCommandColumn).ToList();
-        ClientSize = new Size(540, Math.Min(660, 160 + editableColumns.Count * 40));
+        ClientSize = new Size(540, Math.Min(660, 160 + editableColumns.Count * 40) + CaptionHeight);
 
         var fields = new TableLayoutPanel
         {

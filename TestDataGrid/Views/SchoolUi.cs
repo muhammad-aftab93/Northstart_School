@@ -29,6 +29,17 @@ public static class SchoolUi
 
     private sealed class NoScope : IDisposable { public void Dispose() { } }
 
+    /// <summary>Themed question; the message accepts Markdown. The default button is the last one.</summary>
+    public static DialogResult Ask(Control from, string markup, string title, MessageBoxButtons buttons = MessageBoxButtons.OKCancel, MessageBoxIcon icon = MessageBoxIcon.Question, MessageBoxDefaultButton defaultButton = MessageBoxDefaultButton.Button1) =>
+        EnterpriseMarkupDialog.ShowMarkup(markup, title, buttons, icon, owner: from.FindForm(), defaultButton: defaultButton);
+
+    /// <summary>Themed notice for an error or warning; the text is shown as written.</summary>
+    public static void Report(Control from, string message, string title, MessageBoxIcon icon = MessageBoxIcon.Error) =>
+        EnterpriseMarkupDialog.ShowMarkup(message, title, MessageBoxButtons.OK, icon, LabelMarkupMode.Plain, from.FindForm());
+
+    /// <summary>Short confirmation in the corner of the screen; with <paramref name="path"/> it offers to open the file or its folder.</summary>
+    public static void Toast(Control from, string title, string message, string? path = null) => Window(from)?.Toast(title, message, NotificationSeverity.Success, path);
+
     private static EnterpriseCalloutControl? _hint;
 
     /// <summary>Speech recognition shared by every dictation button.</summary>

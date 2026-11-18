@@ -8,7 +8,7 @@ using TestDataGrid.Views;
 
 namespace TestDataGrid.Dialogs;
 
-public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
+public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecord
 {
     private static readonly string[] DateFormats = { "yyyy-MM-dd", "yyyy-MM-dd HH:mm", "yyyy-MM-ddTHH:mm" };
 
@@ -24,14 +24,15 @@ public sealed class SchoolRecordDialog<T> : Form where T : SchoolRecord
         _draft = SchoolStore.Clone(record);
         Text = title;
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        AllowResize = false;
+        TitleBar.ShowIcon = false;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
         Font = SchoolUi.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
         var fields = SchoolSchema.Fields<T>().Where(field => !field.ReadOnly).ToArray();
         var rows = (fields.Count(field => !field.Multiline) + 1) / 2 + fields.Count(field => field.Multiline);
-        ClientSize = new Size(720, Math.Clamp(190 + rows * 82, 380, 720));
+        ClientSize = new Size(720, Math.Clamp(190 + rows * 82, 380, 720) + CaptionHeight);
 
         var layout = new EnterpriseDataLayoutControl { Dock = DockStyle.Fill, ColumnWidth = 320, MaxColumns = 2, CardGroups = false, AccessibleName = title };
         foreach (var field in fields)

@@ -75,14 +75,24 @@ public sealed class SettingsView : UserControl
             using var dialog = new SaveFileDialog { Filter = "School backup|*.json", FileName = "northstar-backup.json" };
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
             using (SchoolUi.Busy(this, "Writing backup\u2026")) _store.Backup(dialog.FileName);
-            SchoolUi.Window(this)?.Notify("Backup saved", dialog.FileName, NotificationSeverity.Success, null);
+            SchoolUi.Toast(this, "Backup saved", Path.GetFileName(dialog.FileName), dialog.FileName);
         });
         Command("Restore", () =>
         {
             using var dialog = new OpenFileDialog { Filter = "School backup|*.json" };
-            if (dialog.ShowDialog(FindForm()) == DialogResult.OK && MessageBox.Show(FindForm(), "Replace current school records with this backup?", "Restore Backup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+            var model = new EnterpriseUI.Layout.EnterpriseTaskDialog { WindowTitle = "Restore Backup", MainInstruction = "Replace the current school records?", Content = $"Restoring **{Path.GetFileName(dialog.FileName)}** replaces every student, course, invoice and setting." };
+            model.CommandLinks.Add(new("safe", "Back up the current records first", "Saves them beside the backup file, then restores"));
+            model.CommandLinks.Add(new("direct", "Restore without a backup", "The current records are replaced and cannot be recovered"));
+            using (var choice = new EnterpriseTaskDialogForm(model) { DialogIcon = MessageBoxIcon.Warning, CommonButtons = EnterpriseTaskDialogButtons.Cancel })
+                choice.Execute(FindForm());
+            if (model.SelectedCommandId == null) return;
             {
-                using (SchoolUi.Busy(this, "Restoring backup\u2026")) _store.Restore(dialog.FileName);
+                using (SchoolUi.Busy(this, "Restoring backup\u2026"))
+                {
+                    if (model.SelectedCommandId == "safe") _store.Backup(Path.Combine(Path.GetDirectoryName(dialog.FileName)!, "before-restore-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json"));
+                    _store.Restore(dialog.FileName);
+                }
                 if (ThemeManager.Instance.AvailableThemes.Any(theme => theme.Name == _store.Data.Settings.Theme)) ThemeManager.Instance.ApplyTheme(_store.Data.Settings.Theme);
                 var fresh = SchoolStore.Clone(_store.Data.Settings);
                 _entry.Entity = fresh;

@@ -8,7 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace TestDataGrid
 {
-    public partial class Form1 : Form
+    public partial class Form1 : EnterpriseRibbonForm
     {
         public Form1() : this(false)
         {
@@ -49,6 +49,10 @@ namespace TestDataGrid
                 if (_contextStudent != null) EditStudent(_contextStudent);
             });
             InitializeFeatureWorkspace();
+            BuildRibbon();
+            ClientSize = new Size(ClientSize.Width, ClientSize.Height + CaptionHeight + 96);
+            Ribbon.SendToBack();
+            TitleBar.SendToBack();
         }
 
         private readonly ContextMenuStrip _studentMenu;
@@ -78,7 +82,7 @@ namespace TestDataGrid
             }
             catch (Exception exception)
             {
-                MessageBox.Show(this, exception.Message, "Unable to refresh students", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Notice(exception.Message, "Unable to refresh students", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally { _editingDialogOpen = false; UpdateWorkspaceStatus(); }
         }
@@ -95,7 +99,7 @@ namespace TestDataGrid
             }
             catch (Exception exception)
             {
-                MessageBox.Show(this, exception.Message, "Unable to load students", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Notice(exception.Message, "Unable to load students", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

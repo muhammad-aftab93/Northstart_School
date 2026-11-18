@@ -23,8 +23,8 @@ public sealed class ReportsView : UserControl
             using var dialog = new SaveFileDialog { Filter = extension.ToUpperInvariant() + "|*." + extension, FileName = "school-report." + extension };
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
             using var busy = SchoolUi.Busy(this, "Exporting report\u2026");
-            try { await ExportService.Default.ExportToFileAsync(SchoolReports.Build(_store.Data, (string)_reports.SelectedItem!), extension, dialog.FileName); }
-            catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, "Report Export", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            try { await ExportService.Default.ExportToFileAsync(SchoolReports.Build(_store.Data, (string)_reports.SelectedItem!), extension, dialog.FileName); SchoolUi.Toast(this, "Report exported", Path.GetFileName(dialog.FileName), dialog.FileName); }
+            catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Report Export"); }
         }
         toolbar.AddSplit("Export", () => _ = ExportAsyncTo("pdf"), new[] { "pdf", "xlsx", "csv", "html", "json", "xml" }.Select(format => (format.ToUpperInvariant(), (Action)(() => _ = ExportAsyncTo(format)))));
         Controls.Add(_preview); Controls.Add(toolbar); Controls.Add(SchoolUi.Heading("Reports"));

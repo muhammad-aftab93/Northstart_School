@@ -1,15 +1,18 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using EnterpriseUI.Abstractions.Theming;
 using EnterpriseUI.Editors.Interactivity;
+using EnterpriseUI.Notifications;
 using EnterpriseUI.Theming;
 using EnterpriseUI.WinForms;
+using TestDataGrid.Dialogs;
 using TestDataGrid.Models;
 using TestDataGrid.Services;
 using TestDataGrid.Views;
 
 namespace TestDataGrid;
 
-public sealed class MainForm : Form
+public sealed class MainForm : EnterpriseToolbarForm
 {
     private static readonly Dictionary<string, string> Glyphs = new()
     {
@@ -35,25 +38,34 @@ public sealed class MainForm : Form
     private readonly Panel _workspace = new() { Dock = DockStyle.Fill };
     private readonly FlowLayoutPanel _navigation = new() { Dock = DockStyle.Left, Width = 215, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(12) };
     private readonly Label _identity = new() { Dock = DockStyle.Top, Height = 62, Padding = new Padding(24, 0, 12, 0), TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 17f, FontStyle.Bold) };
-    private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly EnterpriseWaitingBarControl _busy = new() { Animation = WaitingBarAnimation.Marquee, IsWaiting = false, Width = 180, Height = 20, AccessibleName = "Working" };
-    private readonly ToolStripControlHost _busyHost;
+    private readonly EnterpriseStatusStrip _statusBar = new();
+    private readonly EnterpriseOverlay _overlay = new() { Indicator = EnterpriseOverlayIndicator.Ring, Opacity = 0.3 };
     private readonly Dictionary<string, Func<Control>> _pages = new();
     private readonly Dictionary<string, EnterpriseToggleButtonControl> _buttons = new();
     private readonly HashSet<string> _visited = new();
     private readonly HashSet<string> _tipsShown = new();
     private readonly EnterpriseNotifyIcon _tray;
+    private readonly EnterpriseToastNotification? _toast;
+    private readonly EnterpriseTaskbarButton? _taskbar;
+    private readonly EnterpriseToolbarItem _alertsItem;
     private readonly EnterpriseVirtualKeyboardControl _keyboard = new() { Dock = DockStyle.Fill, KeyClickSound = false, HideOnClose = false, AccessibleName = "Touch keyboard" };
     private readonly Panel _keyboardPanel = new() { Dock = DockStyle.Bottom, Height = 270, Visible = false, Padding = new Padding(8) };
     private readonly System.Windows.Forms.Timer _focusTimer = new() { Interval = 300 };
     private readonly EnterpriseToggleButtonControl _touchToggle = new() { Text = "Touch keyboard", Glyph = "\u2328", Width = 185, Height = 38, Margin = new Padding(0, 6, 0, 0), AccessibleName = "Touch keyboard" };
+    private readonly ToolStripMenuItem _themeMenu = new("Theme");
     private EnterpriseCalloutControl? _tip;
+    private EnterpriseFlyout? _flyout;
+    private WorkspaceWindow? _workspaceWindow;
+    private LessonWidget? _widget;
     private string _currentPage = string.Empty;
     private int _busyCount;
     private int _auditSeen;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetFocus();
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr handle);
 
     public MainForm(SchoolStore? store = null, bool interactive = true)
     {
@@ -62,7 +74,7 @@ public sealed class MainForm : Form
         if (ThemeManager.Instance.AvailableThemes.Any(theme => theme.Name == Store.Data.Settings.Theme)) ThemeManager.Instance.ApplyTheme(Store.Data.Settings.Theme);
         Text = Store.Data.Settings.SchoolName;
         Icon = SystemIcons.Application;
-        ClientSize = new Size(1400, 850); MinimumSize = new Size(1050, 650);
+        ClientSize = new Size(1400, 850 + CaptionHeight); MinimumSize = new Size(1050, 650);
         StartPosition = FormStartPosition.CenterScreen; Font = SchoolUi.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
         _identity.Text = Store.Data.Settings.SchoolName + "   /   " + Store.Data.Settings.AcademicYear;
@@ -92,27 +104,46 @@ public sealed class MainForm : Form
         _keyboard.CloseRequested += (_, _) => _touchToggle.Checked = false;
         _focusTimer.Tick += (_, _) => FollowFocus();
 
-        _busyHost = new ToolStripControlHost(_busy) { Visible = false, Margin = new Padding(0, 2, 8, 2) };
-        var status = new StatusStrip(); status.Items.Add(_status); status.Items.Add(_busyHost);
+        _statusBar.AddPanel("status", string.Empty, spring: true);
+        _statusBar.AddPanel("records", string.Empty, 170);
+        _statusBar.AddPanel("alerts", "No new alerts", 140, kind: EnterpriseStatusPanelKind.Link).ToolTip = "Open the notification centre";
+        _statusBar.AddPanel("theme", string.Empty, 150, kind: EnterpriseStatusPanelKind.Link).ToolTip = "Change the theme";
+        _statusBar.PanelClick += (_, e) =>
+        {
+            if (e.Panel.Name == "alerts") ToggleNotifications();
+            else if (e.Panel.Name == "theme") Navigate("Settings");
+        };
 
-        Controls.Add(_workspace); Controls.Add(_keyboardPanel); Controls.Add(_navigation); Controls.Add(_identity); Controls.Add(status);
+        Controls.Add(_workspace); Controls.Add(_keyboardPanel); Controls.Add(_navigation); Controls.Add(_identity); Controls.Add(_statusBar);
 
         _tray = new EnterpriseNotifyIcon { Icon = SystemIcons.Application, Text = Store.Data.Settings.SchoolName, Visible = interactive, ToastMode = interactive ? NotifyToastMode.Custom : NotifyToastMode.None };
         _tray.ContextMenuStrip = BuildTrayMenu();
         _tray.NotificationClicked += (_, e) => OpenNotification(e.Notification);
         _tray.ActionInvoked += (_, e) => OpenNotification(e.Notification);
         _tray.DoubleClick += (_, _) => RestoreWindow();
+        _tray.Center.Changed += (_, _) => UpdateUnread();
         _auditSeen = Store.Data.Audit.Count;
 
+        _alertsItem = BuildToolbar();
+        if (interactive)
+        {
+            _toast = new EnterpriseToastNotification { Placement = ToastPlacement.BottomRight, MaxVisibleToasts = 2 };
+            _toast.ActionInvoked += (_, e) => ToastAction(e.ActionId, e.Notification.Tag);
+            _taskbar = new EnterpriseTaskbarButton { Form = this };
+            BuildTaskbarButtons();
+        }
+
+        _overlay.Host = _workspace;
         ThemeManager.Instance.ThemeChanged += ThemeChanged;
         Store.Changed += StoreChanged;
         FormClosed += (_, _) =>
         {
             ThemeManager.Instance.ThemeChanged -= ThemeChanged; Store.Changed -= StoreChanged;
-            _focusTimer.Dispose(); _tip?.Dispose(); _tray.Dispose();
+            _focusTimer.Dispose(); _tip?.Dispose(); _tray.Dispose(); _toast?.Dispose(); _taskbar?.Dispose(); _overlay.Dispose(); _widget?.Dispose();
         };
         Shown += (_, _) => { if (_interactive) RaiseStartupAlerts(); };
-        ApplyTheme();
+        ApplySchoolColors();
+        UpdateUnread();
         Navigate("Overview");
     }
 
@@ -124,7 +155,7 @@ public sealed class MainForm : Form
         {
             if (!button.Checked || _currentPage == name) return;
             try { Navigate(name); }
-            catch (Exception exception) { MessageBox.Show(this, exception.Message, "Unable to Open " + name, MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Unable to Open " + name); }
         };
         _navigation.Controls.Add(button); _buttons[name] = button;
     }
@@ -133,7 +164,13 @@ public sealed class MainForm : Form
     public Control CurrentView => _workspace.Controls[0];
     public EnterpriseNotifyIcon Tray => _tray;
     public EnterpriseVirtualKeyboardControl Keyboard => _keyboard;
+    public EnterpriseStatusStrip StatusBar => _statusBar;
+    public EnterpriseTaskbarButton? Taskbar => _taskbar;
+    public EnterpriseFlyout? NotificationFlyout => _flyout;
     public bool IsBusy => _busyCount > 0;
+
+    /// <summary>A new, independent instance of a screen, for the multi-window workspace.</summary>
+    public Control CreatePage(string page) => _pages[page]();
 
     public void Navigate(string page)
     {
@@ -147,31 +184,43 @@ public sealed class MainForm : Form
             _visited.Add(page);
             if (!_buttons[page].Checked) _buttons[page].Checked = true;
             MarkRead(page);
-            ApplyTheme();
-            _status.Text = StatusText();
+            ApplySchoolColors();
+            SetStatus(StatusText());
             ShowTip(page);
         }
         catch (Exception exception) { throw new InvalidOperationException("Unable to open " + page, exception); }
     }
 
-    private string StatusText() => $"{Store.Data.Settings.SchoolName}   \u00b7   {Store.Data.Students.Count:N0} students   \u00b7   {Store.Data.Settings.AcademicYear}   \u00b7   Local data saved";
+    private string StatusText() => $"{Store.Data.Settings.SchoolName}   \u00b7   {Store.Data.Settings.AcademicYear}   \u00b7   Local data saved";
 
-    /// <summary>Shows the busy indicator in the status bar until the scope is disposed; nested scopes share it.</summary>
+    private void SetStatus(string text)
+    {
+        _statusBar.SetText("status", text);
+        _statusBar.SetText("records", $"{Store.Data.Students.Count:N0} students");
+        _statusBar.SetText("theme", ThemeManager.Instance.CurrentTheme.Name);
+    }
+
+    /// <summary>Dims and blocks the screen and shows the busy state on the taskbar until the scope is disposed; nested scopes share it.</summary>
     public IDisposable BeginBusy(string text)
     {
         _busyCount++;
-        _status.Text = text;
-        _busyHost.Visible = true;
-        _busy.StartWaiting();
+        SetStatus(text);
+        if (_interactive && IsHandleCreated && Visible)
+        {
+            _overlay.Caption = text;
+            _overlay.Show(_workspace);
+            _taskbar?.SetProgress(0, EnterpriseTaskbarProgressState.Indeterminate);
+        }
+
         return new BusyScope(this);
     }
 
     private void EndBusy()
     {
         if (--_busyCount > 0) return;
-        _busy.StopWaiting();
-        _busyHost.Visible = false;
-        _status.Text = StatusText();
+        if (_overlay.IsVisible) _overlay.Hide();
+        if (_taskbar != null) _taskbar.ProgressState = EnterpriseTaskbarProgressState.None;
+        SetStatus(StatusText());
     }
 
     private sealed class BusyScope : IDisposable
@@ -190,9 +239,226 @@ public sealed class MainForm : Form
         return notification;
     }
 
+    /// <summary>Brief confirmation that does not stay in the notification history; <paramref name="path"/> adds Open and Show in folder actions.</summary>
+    public void Toast(string title, string message, NotificationSeverity severity = NotificationSeverity.Success, string? path = null)
+    {
+        if (_toast == null) { SetStatus(title + " \u00b7 " + message); return; }
+        var actions = path == null ? Array.Empty<NotificationAction>() : new[] { new NotificationAction("file", "Open", true), new NotificationAction("folder", "Show in folder") };
+        _toast.Show(title, message, severity, TimeSpan.FromSeconds(7), actions).Tag = path;
+    }
+
+    private static void ToastAction(string? actionId, object? tag)
+    {
+        if (tag is not string path) return;
+        try
+        {
+            if (actionId == "folder") Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+            else if (actionId == "file") Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+    }
+
+    private EnterpriseToolbarItem BuildToolbar()
+    {
+        var file = new ContextMenuStrip();
+        file.Items.Add("Admit student\u2026", null, (_, _) => AdmitStudent());
+        file.Items.Add("Roll call\u2026", null, (_, _) => RollCall());
+        file.Items.Add("New workspace window", null, (_, _) => OpenWorkspaceWindow(_currentPage));
+        file.Items.Add(new ToolStripSeparator());
+        file.Items.Add("Settings", null, (_, _) => Navigate("Settings"));
+        file.Items.Add("Exit", null, (_, _) => Close());
+        AddMenu("file", "File", file);
+
+        var view = new ContextMenuStrip();
+        var keyboard = new ToolStripMenuItem("Touch keyboard") { CheckOnClick = true };
+        keyboard.Click += (_, _) => _touchToggle.Checked = keyboard.Checked;
+        var widget = new ToolStripMenuItem("Lesson widget") { CheckOnClick = true };
+        widget.Click += (_, _) => ToggleLessonWidget(widget.Checked);
+        view.Items.Add(keyboard);
+        view.Items.Add(widget);
+        view.Items.Add(_themeMenu);
+        view.Opening += (_, _) => { keyboard.Checked = _touchToggle.Checked; widget.Checked = _widget is { IsDisposed: false }; RebuildThemeMenu(); };
+        AddMenu("view", "View", view);
+
+        var help = new ContextMenuStrip();
+        help.Items.Add("What's new", null, (_, _) => ShowWhatsNew());
+        help.Items.Add("About", null, (_, _) => ShowAbout());
+        AddMenu("help", "Help", help);
+
+        Toolbar.AddSeparator();
+        AddToolbarItem("admit", "Admit", "\u2795", "Admit a student");
+        AddToolbarItem("rollcall", "Roll call", "\u2714", "Take today's register");
+        var alerts = AddToolbarItem("alerts", string.Empty, "\U0001F514", "Notification centre");
+        ShowSearch = true;
+        Toolbar.SearchPlaceholder = "Ask the assistant";
+        Toolbar.SearchWidth = 230;
+        ToolbarItemClick += (_, e) =>
+        {
+            switch (e.Item.Id)
+            {
+                case "admit": AdmitStudent(); break;
+                case "rollcall": RollCall(); break;
+                case "alerts": ToggleNotifications(); break;
+            }
+        };
+        SearchSubmitted += (_, text) => AskAssistant(text);
+        return alerts;
+    }
+
+    private void RebuildThemeMenu()
+    {
+        _themeMenu.DropDownItems.Clear();
+        foreach (var theme in ThemeManager.Instance.AvailableThemes)
+        {
+            var name = theme.Name;
+            var item = new ToolStripMenuItem(name) { Checked = name == ThemeManager.Instance.CurrentTheme.Name };
+            item.Click += (_, _) => { ThemeManager.Instance.ApplyTheme(name); Store.Transaction(data => data.Settings.Theme = name); };
+            _themeMenu.DropDownItems.Add(item);
+        }
+    }
+
+    private void BuildTaskbarButtons()
+    {
+        if (_taskbar == null) return;
+        _taskbar.ThumbnailButtons.Add(new EnterpriseTaskbarThumbnailButton("overview", SystemIcons.Application, "Overview"));
+        _taskbar.ThumbnailButtons.Add(new EnterpriseTaskbarThumbnailButton("rollcall", SystemIcons.Information, "Roll call"));
+        _taskbar.ThumbnailButtons.Add(new EnterpriseTaskbarThumbnailButton("assistant", SystemIcons.Question, "Assistant"));
+        _taskbar.ThumbnailButtonClick += (_, e) =>
+        {
+            RestoreWindow();
+            switch (e.Button.Id)
+            {
+                case "overview": Navigate("Overview"); break;
+                case "rollcall": RollCall(); break;
+                case "assistant": Navigate("Assistant"); break;
+            }
+        };
+    }
+
+    public void AdmitStudent()
+    {
+        using var wizard = new AdmissionWizard(Store);
+        wizard.ShowDialog(this);
+    }
+
+    public void RollCall()
+    {
+        using var dialog = new RollCallDialog(Store);
+        dialog.ShowDialog(this);
+    }
+
+    public void AskAssistant(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question)) return;
+        Navigate("Assistant");
+        if (CurrentView is AssistantView assistant) assistant.Chat.SendText(question.Trim());
+    }
+
+    /// <summary>Opens a screen in the tabbed workspace window; tabs can be dragged out to a second monitor.</summary>
+    public WorkspaceWindow OpenWorkspaceWindow(string? page = null)
+    {
+        if (_workspaceWindow == null || _workspaceWindow.IsDisposed)
+        {
+            _workspaceWindow = new WorkspaceWindow(this);
+            _workspaceWindow.Show(this);
+        }
+
+        _workspaceWindow.OpenPage(string.IsNullOrEmpty(page) ? "Overview" : page);
+        _workspaceWindow.Activate();
+        return _workspaceWindow;
+    }
+
+    private void ToggleLessonWidget(bool on)
+    {
+        if (!on)
+        {
+            _widget?.Close();
+            _widget = null;
+            return;
+        }
+
+        _widget = new LessonWidget(Store);
+        _widget.FormClosed += (_, _) => _widget = null;
+        _widget.Show(this);
+    }
+
+    private void ShowWhatsNew() =>
+        EnterpriseMarkupDialog.ShowMarkup("**Highlights**\n\n- A title bar with menus, search and notifications\n- A **multi-window workspace**: open any screen in tabs, drag a tab out to use a second monitor\n- A status bar with live unread alerts\n- A start-of-day briefing for fees, tasks and lessons\n\nSee the [documentation](https://github.com/muhammad-aftab93/EnterpriseUI) for details.", "What's new", MessageBoxButtons.OK, MessageBoxIcon.Information, owner: this);
+
+    private void ShowAbout()
+    {
+        using var about = new EnterpriseAboutBox();
+        about.LoadFromAssembly(typeof(MainForm).Assembly);
+        about.ProductName = Store.Data.Settings.SchoolName;
+        about.Description = "Offline school operations: students, courses, attendance, timetable, finance and reports, built with Windows Forms and EnterpriseUI.";
+        about.LinkUrl = "https://github.com/muhammad-aftab93/EnterpriseUI";
+        about.Text = "About " + Store.Data.Settings.SchoolName;
+        about.ShowDialog(this);
+    }
+
+    public void ToggleNotifications()
+    {
+        if (_flyout is { IsDisposed: false, IsOpen: true }) { _flyout.HideFlyout(); return; }
+        var panel = new NotificationCenterPanel(_tray.Center, notification => { _flyout?.HideFlyout(); OpenNotification(notification); }) { Dock = DockStyle.Fill };
+        var flyout = new EnterpriseFlyout { Text = "Notifications", Edge = EnterpriseFlyoutEdge.Right, FlyoutSize = 420, IsModal = false, LightDismiss = true };
+        flyout.Content.Controls.Add(panel);
+        flyout.FlyoutClosed += (_, _) => { panel.Dispose(); flyout.Dispose(); if (_flyout == flyout) _flyout = null; };
+        _flyout = flyout;
+        flyout.ShowFlyout(_workspace);
+    }
+
+    private void UpdateUnread()
+    {
+        var unread = _tray.UnreadCount;
+        _alertsItem.Text = unread > 0 ? unread.ToString() : string.Empty;
+        _statusBar.SetText("alerts", unread == 0 ? "No new alerts" : unread == 1 ? "1 new alert" : unread + " new alerts");
+        if (_taskbar == null) return;
+        if (unread == 0) { _taskbar.ClearOverlay(); return; }
+        using var badge = new Bitmap(32, 32);
+        using (var g = Graphics.FromImage(badge))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.FillEllipse(Brushes.Firebrick, 0, 0, 31, 31);
+            using var font = new Font("Segoe UI", unread > 9 ? 11f : 15f, FontStyle.Bold, GraphicsUnit.Pixel);
+            TextRenderer.DrawText(g, unread > 9 ? "9+" : unread.ToString(), font, new Rectangle(0, 0, 32, 32), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+
+        var handle = badge.GetHicon();
+        try
+        {
+            using var icon = Icon.FromHandle(handle);
+            _taskbar.SetOverlay((Icon)icon.Clone(), unread + " unread notifications");
+        }
+        finally { DestroyIcon(handle); }
+    }
+
+    /// <summary>Quietly adds today's alerts to the history and shows one briefing alert that links to each of them.</summary>
     private void RaiseStartupAlerts()
     {
-        foreach (var alert in SchoolAlerts.Build(Store.Data).Take(3)) Notify(alert.Title, alert.Message, alert.Severity, alert.Page, alert.Group);
+        var alerts = SchoolAlerts.Build(Store.Data).Take(3).ToList();
+        if (alerts.Count == 0) return;
+        var mode = _tray.ToastMode;
+        _tray.ToastMode = NotifyToastMode.None;
+        foreach (var alert in alerts) Notify(alert.Title, alert.Message, alert.Severity, alert.Page, alert.Group);
+        _tray.ToastMode = mode;
+        if (!Store.Data.Settings.ShowBriefing) return;
+
+        var hour = DateTime.Now.Hour;
+        var model = new EnterpriseDesktopAlert
+        {
+            CaptionText = (hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening") + " \u00b7 " + alerts.Count + (alerts.Count == 1 ? " item needs" : " items need") + " attention",
+            ContentText = string.Join(Environment.NewLine, alerts.Select(alert => "\u2022 " + alert.Message)),
+            AutoCloseDelaySeconds = 14
+        };
+        var window = new EnterpriseDesktopAlertWindow(model) { Severity = alerts.Any(alert => alert.Severity == NotificationSeverity.Warning) ? NotificationSeverity.Warning : NotificationSeverity.Info };
+        foreach (var alert in alerts) window.Actions.Add(new NotificationAction(alert.Page, alert.Page));
+        window.ActionClicked += (_, e) => { RestoreWindow(); if (_pages.ContainsKey(e.Action.Id)) Navigate(e.Action.Id); };
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Do not show the briefing at start", null, (_, _) => Store.Transaction(data => data.Settings.ShowBriefing = false));
+        menu.Items.Add("Mark all notifications read", null, (_, _) => _tray.MarkAllRead());
+        window.OptionsMenu = menu;
+        window.AlertClosed += (_, _) => menu.Dispose();
+        window.ShowAlert();
     }
 
     private void OpenNotification(AppNotification notification)
@@ -253,19 +519,30 @@ public sealed class MainForm : Form
         _keyboard.Target = box;
     }
 
-    private void ThemeChanged(object? sender, ITheme theme) => ApplyTheme();
+    private void ThemeChanged(object? sender, ITheme theme)
+    {
+        ApplySchoolColors();
+        _statusBar.SetText("theme", theme.Name);
+    }
 
     private void StoreChanged(object? sender, EventArgs e)
     {
         _identity.Text = Store.Data.Settings.SchoolName + "   /   " + Store.Data.Settings.AcademicYear;
         Text = Store.Data.Settings.SchoolName;
-        if (!IsBusy) _status.Text = "Changes saved   \u00b7   " + DateTime.Now.ToString("HH:mm:ss");
+        _statusBar.SetText("records", $"{Store.Data.Students.Count:N0} students");
+        if (!IsBusy) _statusBar.SetText("status", "Changes saved   \u00b7   " + DateTime.Now.ToString("HH:mm:ss"));
         if (Store.Data.Audit.Count < _auditSeen) _auditSeen = Store.Data.Audit.Count;
         foreach (var alert in SchoolAlerts.FromAudit(Store.Data, _auditSeen)) Notify(alert.Title, alert.Message, alert.Severity, alert.Page, alert.Group);
         _auditSeen = Store.Data.Audit.Count;
     }
 
-    private void ApplyTheme()
+    protected override void OnThemeApplied()
+    {
+        base.OnThemeApplied();
+        ApplySchoolColors();
+    }
+
+    private void ApplySchoolColors()
     {
         SchoolUi.Apply(this);
         _identity.BackColor = SchoolUi.Header;

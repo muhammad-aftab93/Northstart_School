@@ -53,7 +53,7 @@ public sealed class AttendanceView : RecordWorkspace<AttendanceRecord>
         AddCommand("Roll Call...", () => { using var dialog = new RollCallDialog(Store); dialog.ShowDialog(FindForm()); });
         AddCommand("Mark Today Present", () =>
         {
-            if (MessageBox.Show(FindForm(), "Mark today's enrolled students as present? Existing marks will be retained.", "Roll Call", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            if (SchoolUi.Ask(this, "Mark today's enrolled students as **present**?\n\nExisting marks are retained.", "Roll Call") != DialogResult.OK) return;
             SchoolOperations.MarkAttendance(Store, DateTime.Today);
         });
         AddCommand("Today", () => Grid.FilterBy("Date", EnterpriseUI.Data.FilterOperator.IsEqualTo, DateTime.Today));
@@ -75,7 +75,7 @@ public sealed class FinanceView : RecordWorkspace<InvoiceRecord>
     }
 }
 
-public sealed class PaymentDialog : Form
+public sealed class PaymentDialog : EnterpriseForm
 {
     private readonly NumericUpDown _amount;
     private readonly TextBox _reference;
@@ -83,8 +83,8 @@ public sealed class PaymentDialog : Form
     public PaymentDialog(SchoolStore store, InvoiceRecord invoice)
     {
         Text = "Record Payment · " + invoice.Number;
-        StartPosition = FormStartPosition.CenterParent; FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = MinimizeBox = false; ClientSize = new Size(430, 250); Font = SchoolUi.BodyFont;
+        StartPosition = FormStartPosition.CenterParent; AllowResize = false; TitleBar.ShowIcon = false;
+        MaximizeBox = MinimizeBox = false; ClientSize = new Size(430, 250 + CaptionHeight); Font = SchoolUi.BodyFont;
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Padding = new Padding(22) };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _amount = new NumericUpDown { DecimalPlaces = 2, Maximum = Math.Max(0, invoice.Balance), Value = Math.Max(0, invoice.Balance), Dock = DockStyle.Fill, AccessibleName = "Payment" };

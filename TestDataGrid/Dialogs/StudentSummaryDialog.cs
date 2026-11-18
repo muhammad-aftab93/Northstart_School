@@ -7,19 +7,20 @@ using TestDataGrid.Views;
 namespace TestDataGrid.Dialogs;
 
 /// <summary>Read-only profile of one student: courses with grade and course rating, attendance and tuition paid.</summary>
-public sealed class StudentSummaryDialog : Form
+public sealed class StudentSummaryDialog : EnterpriseForm
 {
     public StudentSummaryDialog(SchoolStore store, StudentRecord student)
     {
         var data = store.Data;
         Text = student.FullName;
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        AllowResize = false;
+        TitleBar.ShowIcon = false;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
         Font = SchoolUi.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(620, 440);
+        ClientSize = new Size(620, 440 + CaptionHeight);
 
         var marks = data.Attendance.Where(item => item.StudentId == student.Id).ToList();
         var attendance = marks.Count == 0 ? "no attendance recorded" : $"{100.0 * marks.Count(item => item.Status != "Absent") / marks.Count:0}% attendance";

@@ -8,7 +8,7 @@ using TestDataGrid.Views;
 namespace TestDataGrid.Dialogs;
 
 /// <summary>Four-step admission: student details, courses, tuition, review. Nothing is saved until the last step is confirmed.</summary>
-public sealed class AdmissionWizard : Form
+public sealed class AdmissionWizard : EnterpriseForm
 {
     private sealed record CourseChoice(int Id, string Label, int SeatsLeft);
 
@@ -37,12 +37,13 @@ public sealed class AdmissionWizard : Form
         _store = store;
         Text = "Admit Student";
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        AllowResize = false;
+        TitleBar.ShowIcon = false;
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
         Font = SchoolUi.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(780, 560);
+        ClientSize = new Size(780, 560 + CaptionHeight);
 
         DepartmentInput.SetItems(Departments);
         DepartmentInput.SelectedIndex = 0;

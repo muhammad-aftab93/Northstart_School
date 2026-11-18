@@ -1,3 +1,6 @@
+using EnterpriseUI.WinForms;
+using TestDataGrid.Services;
+
 namespace TestDataGrid
 {
     internal static class Program
@@ -21,8 +24,24 @@ namespace TestDataGrid
             if (verificationLog != null) { Console.SetOut(verificationLog); Console.SetError(verificationLog); }
             if (!verification)
             {
-                try { Application.Run(new MainForm()); }
-                catch (Exception exception) { MessageBox.Show(exception.Message, "Northstar School", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                EnterpriseSplashScreen? splash = null;
+                try
+                {
+                    splash = new EnterpriseSplashScreen { Title = "Northstar School", Subtitle = "Loading your workspace", FooterText = "Built with EnterpriseUI", Logo = SystemIcons.Application.ToBitmap(), MinimumDuration = 1200 };
+                    splash.ShowSplash();
+                    splash.ReportProgress(10, "Opening school records\u2026");
+                    var store = new SchoolStore();
+                    splash.ReportProgress(45, "Building the workspace\u2026");
+                    var main = new MainForm(store);
+                    splash.ReportProgress(95, "Almost ready\u2026");
+                    main.Shown += (_, _) => splash.Close();
+                    Application.Run(main);
+                }
+                catch (Exception exception)
+                {
+                    if (splash != null) { splash.FadeOut = false; splash.MinimumDuration = 0; splash.Close(); }
+                    MessageBox.Show(exception.Message, "Northstar School", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return;
             }
             var form = new Form1(true);

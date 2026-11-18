@@ -63,7 +63,7 @@ public sealed class AssistantView : UserControl
         }
         catch (System.Runtime.InteropServices.ExternalException exception)
         {
-            MessageBox.Show(FindForm(), exception.Message, "Copy draft", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            SchoolUi.Report(this, exception.Message, "Copy draft", MessageBoxIcon.Warning);
         }
     }
 }

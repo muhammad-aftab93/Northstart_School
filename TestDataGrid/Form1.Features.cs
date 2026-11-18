@@ -67,7 +67,7 @@ public partial class Form1
         _save = Command("Save Changes", () => { dataGrid.CommitChanges(); return dataGrid.RefreshDataAsync(); });
         _discard = Command("Discard", () =>
         {
-            if (MessageBox.Show(this, "Discard pending changes?", "Discard Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
+            if (Notice("Discard pending changes?", "Discard Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
                 dataGrid.RollbackChanges();
             return dataGrid.RefreshDataAsync();
         });
@@ -143,7 +143,7 @@ public partial class Form1
         AddEnumSelector<GridSelectionMode>("Selection", GridSelectionMode.MultipleRows, value => { dataGrid.SelectionMode = value; return Task.CompletedTask; });
         AddEnumSelector<GridEditMode>("Edit", GridEditMode.Form, value =>
         {
-            if (dataGrid.HasPendingChanges) { MessageBox.Show(this, "Save or discard pending changes first.", "Pending Changes", MessageBoxButtons.OK, MessageBoxIcon.Warning); return Task.CompletedTask; }
+            if (dataGrid.HasPendingChanges) { Notice("Save or discard pending changes first.", "Pending Changes", MessageBoxButtons.OK, MessageBoxIcon.Warning); return Task.CompletedTask; }
             dataGrid.EditMode = value;
             return Task.CompletedTask;
         });
@@ -225,10 +225,11 @@ public partial class Form1
         dataGrid.Enabled = false;
         _transferGrid.Enabled = false;
         foreach (ToolStripItem command in _commands.Items) if (command != _cancel) command.Enabled = false;
+        SyncRibbon();
         UseWaitCursor = true;
         try { await action(); }
         catch (OperationCanceledException) { _status.Text = "Operation cancelled."; }
-        catch (Exception exception) { MessageBox.Show(this, exception.Message, "Grid Operation", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception exception) { Notice(exception.Message, "Grid Operation", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally
         {
             _operationCancellation.Dispose();
@@ -262,7 +263,7 @@ public partial class Form1
     {
         var rows = students.Distinct().ToList();
         if (rows.Count == 0) return;
-        if (MessageBox.Show(this, $"Delete {rows.Count} student record(s)?", "Confirm Deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+        if (Notice($"Delete {rows.Count} student record(s)?", "Confirm Deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
         dataGrid.RemoveRows(rows);
         await dataGrid.RefreshDataAsync();
     }
@@ -428,6 +429,7 @@ public partial class Form1
         _save.Enabled = _discard.Enabled = !_busy && dataGrid.HasPendingChanges;
         _edit.Enabled = dataGrid.EditMode != GridEditMode.None && !_busy;
         _status.ToolTipText = _status.Text;
+        SyncRibbon();
     }
 
     private void WorkspaceThemeChanged(object? sender, ITheme theme) => ApplyWorkspacePalette();

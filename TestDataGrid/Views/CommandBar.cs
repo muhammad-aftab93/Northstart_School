@@ -40,7 +40,7 @@ public sealed class CommandBar : FlowLayoutPanel
     private void Run(string title, Action action)
     {
         try { action(); }
-        catch (Exception exception) { MessageBox.Show(FindForm(), exception.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        catch (Exception exception) { SchoolUi.Report(this, exception.Message, title, MessageBoxIcon.Warning); }
     }
 
     public EnterpriseButtonControl AddCommand(string title, Action action, string? glyph = null, EnterpriseButtonVariant variant = EnterpriseButtonVariant.Outline)

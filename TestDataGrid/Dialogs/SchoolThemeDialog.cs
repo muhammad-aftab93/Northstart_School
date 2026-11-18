@@ -1,12 +1,13 @@
 using EnterpriseUI.Theming;
 using EnterpriseUI.Abstractions.Theming;
+using EnterpriseUI.WinForms;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TestDataGrid.Views;
 
 namespace TestDataGrid.Dialogs;
 
-public sealed class SchoolThemeDialog : Form
+public sealed class SchoolThemeDialog : EnterpriseForm
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
     private sealed class ThemeConfiguration
@@ -29,7 +30,7 @@ public sealed class SchoolThemeDialog : Form
 
     public SchoolThemeDialog()
     {
-        Text = "Theme Editor"; ClientSize = new Size(720, 650); StartPosition = FormStartPosition.CenterParent;
+        Text = "Theme Editor"; ClientSize = new Size(720, 650 + CaptionHeight); StartPosition = FormStartPosition.CenterParent; TitleBar.ShowIcon = false; MinimizeBox = false;
         Font = SchoolUi.BodyFont;
         var active = ThemeManager.Instance.CurrentTheme;
         var editor = new TextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, Font = new Font("Consolas", 10f), Text = JsonSerializer.Serialize(new ThemeConfiguration { Name = active.Name, Type = active.Type, Scheme = active.Scheme, Tokens = new Dictionary<string, string>(active.DesignTokens) }, Options) };

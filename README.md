@@ -26,6 +26,17 @@ Northstar School is an offline Windows desktop sample for managing day-to-day sc
 - Tray icon with an unread count and toasts for overdue fees, due tasks, today's lessons and recorded payments
 - Voice search and note dictation (Windows speech recognition), inline writing help in notes, smart paste of contact details
 - Touch keyboard that follows the focused text box, page tips, and a busy indicator for exports and backups
+- Themed window frame with a title bar that holds menus (File, View with theme and lesson widget, Help), Admit and Roll call buttons, a notification bell with the unread count, and a search box that asks the assistant
+- Status bar with the student count, a live "new alerts" link that opens the notification centre, and the active theme
+- Notification centre as a slide-in flyout, and a start-of-day briefing alert (pin, options and links to Finance, Tasks or Timetable; switch it off in Settings)
+- Taskbar integration: busy indicator, unread badge, and Overview / Roll call / Assistant thumbnail buttons
+- Busy overlay that dims and blocks the screen during exports and backups, and toasts with Open / Show in folder actions when they finish
+- Multi-window workspace (File → New workspace window): screens open in tabs, and a tab can be dragged out to another monitor
+- Floating lesson widget (View → Lesson widget) with the lesson in progress and the next one
+- Task dialogs for removing records (archive or delete) and for restoring a backup (with an optional safety backup), markup dialogs for questions, About box and What's new
+- Splash screen while the school records load
+- **Grid Workshop** with a ribbon: Home, Query, Output, Layout and Tools tabs, quick access buttons, and a contextual "Pending changes" tab while edits are unsaved
+- Control Explorer previews every control and has a Shell menu for the dialogs, alerts, overlay and flyout, and a shape editor that previews the drawn outline as a window
 
 The **Grid Workshop** is a separate feature showcase; it is not the school’s operational student screen.
 

@@ -148,6 +148,9 @@ public sealed class SchoolSettings
 
     [Display(Name = "Show page tips", GroupName = "Lists", Order = 5, Description = "Shows a short tip the first time each screen is opened.")]
     public bool ShowTips { get; set; } = true;
+
+    [Display(Name = "Show start-of-day briefing", GroupName = "Lists", Order = 6, Description = "Shows an alert with the fees, tasks and lessons that need attention when the application starts.")]
+    public bool ShowBriefing { get; set; } = true;
 }
 
 public sealed class SchoolData
