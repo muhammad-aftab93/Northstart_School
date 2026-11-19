@@ -1,3 +1,4 @@
+using EnterpriseUI.Documents;
 using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Models;
@@ -47,9 +48,12 @@ public sealed class StudentSummaryDialog : EnterpriseForm
         footer.Controls.Add(new EnterpriseLabelControl { Dock = DockStyle.Fill, MarkupMode = LabelMarkupMode.Markdown, Text = $"Billed {billed:N2} {data.Settings.Currency} \u00b7 paid {paid:N2} \u00b7 **outstanding {billed - paid:N2} {data.Settings.Currency}**" });
         footer.Controls.Add(new EnterpriseProgressBarControl { Dock = DockStyle.Top, Height = 24, Maximum = 100, Value = billed == 0 ? 100 : (int)Math.Round(paid / billed * 100), TextFormat = "{0:0}% of tuition paid", AccessibleName = "Tuition paid" });
         var close = new EnterpriseButtonControl { Text = "Close", Width = 100, Height = 34, DialogResult = DialogResult.OK, Dock = DockStyle.Bottom };
-        var closeRow = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(0, 8, 14, 8) };
+        var closeRow = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(14, 8, 14, 8) };
         close.Dock = DockStyle.Right;
         closeRow.Controls.Add(close);
+        var transcript = new EnterpriseButtonControl { Text = "Transcript (.docx)", Variant = EnterpriseButtonVariant.Outline, Width = 170, Height = 34, Dock = DockStyle.Left, AccessibleName = "Export transcript" };
+        transcript.Click += (_, _) => ExportTranscript(data, student);
+        closeRow.Controls.Add(transcript);
 
         Controls.Add(rows);
         Controls.Add(footer);
@@ -58,5 +62,20 @@ public sealed class StudentSummaryDialog : EnterpriseForm
         AcceptButton = close;
         CancelButton = close;
         SchoolUi.Apply(this);
+    }
+
+    private void ExportTranscript(SchoolData data, StudentRecord student)
+    {
+        using var dialog = new SaveFileDialog { Filter = "Word document|*.docx", FileName = $"transcript-{student.StudentCode}.docx" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            File.WriteAllBytes(dialog.FileName, EnterpriseWordEngine.Write(SchoolDocuments.BuildTranscript(data, student)));
+            SchoolUi.Toast(this, "Transcript exported", Path.GetFileName(dialog.FileName), dialog.FileName);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            SchoolUi.Report(this, exception.Message, "Transcript Export");
+        }
     }
 }

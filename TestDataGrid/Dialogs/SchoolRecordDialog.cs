@@ -10,8 +10,6 @@ namespace TestDataGrid.Dialogs;
 
 public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecord
 {
-    private static readonly string[] DateFormats = { "yyyy-MM-dd", "yyyy-MM-dd HH:mm", "yyyy-MM-ddTHH:mm" };
-
     private readonly SchoolStore _store;
     private readonly T _draft;
     private readonly List<(PropertyInfo Property, Control Input, RecordField Field, IReadOnlyList<LookupOption>? Options)> _inputs = new();
@@ -66,9 +64,9 @@ public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecor
             else if (property.PropertyType == typeof(bool)) input = new EnterpriseCheckControl { Text = "Yes", Checked = value is true };
             else if (property.PropertyType == typeof(DateTime))
             {
-                var withTime = field.Name.EndsWith("At", StringComparison.Ordinal);
-                input = new EnterpriseInputControl { Text = ((DateTime)(value ?? DateTime.Today)).ToString(withTime ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd", CultureInfo.InvariantCulture) };
-                hint = withTime ? "Format: 2026-11-09 14:30" : "Format: 2026-11-09";
+                var current = (DateTime)(value ?? DateTime.Today);
+                if (field.Name.EndsWith("At", StringComparison.Ordinal)) input = new DateTimeFieldEditor(field.Label, current);
+                else input = new EnterpriseDateOnlyPickerControl { Value = DateOnly.FromDateTime(current), PlaceholderText = "Pick a date", Format = "ddd dd MMM yyyy" };
             }
             else if (property.PropertyType == typeof(int) || property.PropertyType == typeof(decimal))
                 input = new EnterpriseInputControl { Text = Convert.ToDecimal(value ?? 0).ToString(CultureInfo.CurrentCulture) };
@@ -127,18 +125,24 @@ public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecor
         return number;
     }
 
-    private static DateTime ParseDate(RecordField field, string text)
+    private static DateTime ReadDate(RecordField field, DateOnly? date) =>
+        date is { } value ? value.ToDateTime(TimeOnly.MinValue) : throw new FormatException($"{field.Label} must be a date.");
+
+    private static void SetInputError(Control input, bool state)
     {
-        if (DateTime.TryParseExact(text.Trim(), DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var exact)) return exact;
-        if (DateTime.TryParse(text, CultureInfo.CurrentCulture, DateTimeStyles.None, out var parsed)) return parsed;
-        throw new FormatException($"{field.Label} must be a date such as 2026-11-09.");
+        switch (input)
+        {
+            case EnterpriseInputControl text: text.HasError = state; break;
+            case EnterpriseDropDownEditorBase picker: picker.HasError = state; break;
+            case DateTimeFieldEditor stamp: stamp.HasError = state; break;
+        }
     }
 
     public bool SaveDraft()
     {
         try
         {
-            foreach (var (_, input, _, _) in _inputs) if (input is EnterpriseInputControl text) text.HasError = false;
+            foreach (var (_, input, _, _) in _inputs) SetInputError(input, false);
             foreach (var (property, input, field, options) in _inputs)
             {
                 try
@@ -149,7 +153,8 @@ public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecor
                         EnterpriseCheckControl check => check.Checked,
                         EnterpriseDropDownControl drop when options != null => drop.SelectedIndex >= 0 ? options[drop.SelectedIndex].Id : 0,
                         EnterpriseDropDownControl drop => drop.SelectedItem,
-                        EnterpriseInputControl text when property.PropertyType == typeof(DateTime) => ParseDate(field, text.Text),
+                        EnterpriseDateOnlyPickerControl date => ReadDate(field, date.Value),
+                        DateTimeFieldEditor stamp => stamp.Value ?? throw new FormatException($"{field.Label} needs both a date and a time."),
                         EnterpriseInputControl text when property.PropertyType == typeof(int) || property.PropertyType == typeof(decimal) => ParseNumber(property, field, text.Text),
                         EnterpriseInputControl text => text.Text.Trim(),
                         _ => null
@@ -158,7 +163,7 @@ public sealed class SchoolRecordDialog<T> : EnterpriseForm where T : SchoolRecor
                 }
                 catch (FormatException exception)
                 {
-                    if (input is EnterpriseInputControl bad) bad.HasError = true;
+                    SetInputError(input, true);
                     _error.Text = string.Empty;
                     SchoolUi.Hint(input, exception.Message);
                     return false;

@@ -1,5 +1,8 @@
+using EnterpriseUI.Documents;
 using EnterpriseUI.Editors.Interactivity;
 using EnterpriseUI.Exporting;
+using EnterpriseUI.Office;
+using EnterpriseUI.Pdf;
 using EnterpriseUI.WinForms;
 using TestDataGrid.Dialogs;
 using TestDataGrid.Models;
@@ -118,6 +121,7 @@ internal static class SchoolVerification
                     await VerifyControlsAsync(main, store, file, currentTheme.Name, Check);
                     await VerifyInteractiveControlsAsync(main, store, Check);
                     await VerifyShellAsync(main, store, Check);
+                    await VerifyDocumentsAndPickersAsync(main, store, Check);
                     main.Navigate("Tasks");
                     var taskToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
                     taskToolbar.PerformCommand("Board / List");
@@ -361,6 +365,78 @@ internal static class SchoolVerification
         var text = LessonWidget.Describe(store.Data, lesson.StartsAt.AddMinutes(5));
         check(text.Contains("Now:", StringComparison.Ordinal) && text.Contains("min left", StringComparison.Ordinal) && widget.Shape == EnterpriseFormShape.RoundedRectangle, "Lesson widget describes the running lesson");
         check(store.Data.Settings.ShowBriefing, "Start-of-day briefing is on by default");
+    }
+
+    private static async Task VerifyDocumentsAndPickersAsync(MainForm main, SchoolStore store, Action<bool, string> check)
+    {
+        var data = store.Data;
+        var student = data.Students.First(item => item.Active);
+        var transcript = EnterpriseWordEngine.Read(EnterpriseWordEngine.Write(SchoolDocuments.BuildTranscript(data, student)));
+        check(EnterpriseWordEngine.ExtractText(transcript).Contains(student.FullName, StringComparison.Ordinal)
+            && transcript.Blocks.OfType<WordTable>().Single().Rows.Count == 1 + data.Enrollments.Count(item => item.StudentId == student.Id), "Transcript Word document lists the student and every enrolled course");
+
+        var pack = EnterprisePdfEngine.Read(EnterprisePdfEngine.Write(SchoolDocuments.BuildReportPack(data)));
+        var packText = EnterprisePdfEngine.ExtractText(pack);
+        check(pack.Pages.Count >= SchoolDocuments.ReportKinds.Length && SchoolDocuments.ReportKinds.All(kind => packText.Contains(kind, StringComparison.Ordinal)), "Report pack PDF holds every report");
+
+        var book = EnterpriseSheetEngine.Read(EnterpriseSheetEngine.Write(SchoolDocuments.BuildGradeBook(data)));
+        var sheet = book.Worksheets[1];
+        var courseId = data.Courses.Single(item => item.Code == sheet.Name).Id;
+        var grades = data.Enrollments.Where(item => item.CourseId == courseId && item.Status != "Withdrawn").Select(item => item.Grade).ToList();
+        var average = EnterpriseSheetEngine.EvaluateCell(sheet, $"C{grades.Count + 3}");
+        check(book.Worksheets[0].Name == "Summary" && average is double calculated && calculated == (double)Math.Round(grades.Average(), 1, MidpointRounding.AwayFromZero), "Grade book formulas calculate each course average");
+
+        using (var ledger = new MemoryStream())
+        {
+            var written = SchoolDocuments.WriteAttendanceLedger(data, ledger);
+            ledger.Position = 0;
+            using var reader = new EnterpriseSheetStreamReader(ledger);
+            var rows = reader.ReadRows().ToList();
+            check(written == data.Attendance.Count && rows.Count == written + 1 && rows[1].Values[0] is DateTime, "Attendance ledger streams every mark");
+        }
+
+        using (var lessonDialog = new SchoolRecordDialog<LessonRecord>(store, data.Lessons[0], "Edit lesson"))
+        {
+            lessonDialog.Show(main); await Task.Delay(30);
+            var stamps = FindControls(lessonDialog).OfType<DateTimeFieldEditor>().ToList();
+            check(stamps.Count == 2 && stamps[0].Value == data.Lessons[0].StartsAt && stamps[1].Value == data.Lessons[0].EndsAt, "Lesson dialog edits start and end with date and time pickers");
+            Capture(lessonDialog, "Dialog-Lesson");
+            stamps[1].DatePicker.Value = null;
+            var endsBefore = data.Lessons[0].EndsAt;
+            check(!lessonDialog.SaveDraft() && stamps[1].HasError && data.Lessons[0].EndsAt == endsBefore, "An empty date keeps the dialog open and marks the field");
+        }
+
+        using (var dialog = new SchoolRecordDialog<EnrollmentRecord>(store, data.Enrollments[0], "Edit enrollment"))
+        {
+            dialog.Show(main); await Task.Delay(30);
+            check(FindControls(dialog).OfType<EnterpriseDateOnlyPickerControl>().Single().Value == DateOnly.FromDateTime(data.Enrollments[0].EnrolledOn), "Date fields use the date picker");
+        }
+
+        using (var roll = new RollCallDialog(store))
+        {
+            roll.Show(main); await Task.Delay(30);
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            check(roll.DateChoice.MaxDate == today && roll.DateChoice.Value == today && roll.StudentList.Count > 0, "Roll call starts on today with its register loaded");
+            roll.DateChoice.Value = today.AddDays(-2);
+            check(roll.StudentList.Count > 0, "Roll call reloads the register for another date");
+            roll.DateChoice.Value = null;
+            check(roll.StudentList.Count == 0 && !roll.Save(), "Roll call needs a register date");
+        }
+
+        using (var host = new Form { ClientSize = new Size(420, 300), StartPosition = FormStartPosition.CenterParent })
+        {
+            var editors = new EnterpriseDropDownEditorBase[] { new EnterpriseDateOnlyPickerControl(), new EnterpriseTimePickerControl(), new EnterpriseTimeOnlyPickerControl(), new EnterprisePopupBox { PopupContent = new Label { Text = "Pop-up content" } } };
+            for (var index = 0; index < editors.Length; index++) { editors[index].Location = new Point(10, 10 + index * 44); editors[index].Width = 220; host.Controls.Add(editors[index]); }
+            host.Show(main); await Task.Delay(30);
+            var opened = 0;
+            foreach (var editor in editors)
+            {
+                editor.ShowDropDown(); await Task.Delay(30);
+                if (editor.IsDropDownOpen) opened++;
+                editor.CloseDropDown(); await Task.Delay(30);
+            }
+            check(opened == editors.Length && editors.All(editor => !editor.IsDropDownOpen), "Date, time and pop-up editors open and close their pop-ups");
+        }
     }
 
     private static void Capture(Control control, string name)

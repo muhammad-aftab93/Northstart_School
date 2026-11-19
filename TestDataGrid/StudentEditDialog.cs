@@ -79,7 +79,7 @@ public sealed class StudentEditDialog : EnterpriseForm
             if (column.ColumnType == GridColumnType.Boolean)
                 input = new CheckBox { Checked = value is true, AutoSize = true };
             else if (column.ColumnType == GridColumnType.Date && value is DateTime date)
-                input = new DateTimePicker { Format = DateTimePickerFormat.Short, Value = date };
+                input = new EnterpriseDateOnlyPickerControl { Value = DateOnly.FromDateTime(date), PlaceholderText = "Pick a date" };
             else if (column.ColumnType == GridColumnType.ComboBox && column.ComboItems != null)
             {
                 var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -133,7 +133,7 @@ public sealed class StudentEditDialog : EnterpriseForm
             _session.SetValue(column.Field, input switch
             {
                 CheckBox checkbox => checkbox.Checked,
-                DateTimePicker date => date.Value.Date,
+                EnterpriseDateOnlyPickerControl picker => picker.Value?.ToDateTime(TimeOnly.MinValue),
                 ComboBox combo => combo.SelectedItem,
                 TextBox textbox => textbox.Text.Trim(),
                 _ => null
