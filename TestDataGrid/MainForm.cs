@@ -36,12 +36,17 @@ public sealed class MainForm : EnterpriseToolbarForm
     public SchoolStore Store { get; }
     private readonly bool _interactive;
     private readonly Panel _workspace = new() { Dock = DockStyle.Fill };
-    private readonly FlowLayoutPanel _navigation = new() { Dock = DockStyle.Left, Width = 215, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(12) };
+    private readonly EnterpriseNavigationPane _nav = new() { Dock = DockStyle.Left, ExpandedWidth = 230, Title = "Menu", AutoCompactBreakpoint = 1000, DisplayMode = EnterpriseNavigationDisplayMode.Auto, AccessibleName = "Navigation" };
+    private static readonly Dictionary<string, string> Sections = new()
+    {
+        ["Overview"] = "Insights", ["Analytics"] = "Insights", ["Students"] = "People", ["Staff"] = "People", ["Courses"] = "Academics", ["Enrollments"] = "Academics",
+        ["Attendance"] = "Academics", ["Tasks"] = "Operations", ["Timetable"] = "Operations", ["Finance"] = "Operations", ["Reports"] = "Operations", ["Assistant"] = "Operations", ["Audit Log"] = "Operations"
+    };
     private readonly Label _identity = new() { Dock = DockStyle.Top, Height = 62, Padding = new Padding(24, 0, 12, 0), TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 17f, FontStyle.Bold) };
     private readonly EnterpriseStatusStrip _statusBar = new();
     private readonly EnterpriseOverlay _overlay = new() { Indicator = EnterpriseOverlayIndicator.Ring, Opacity = 0.3 };
     private readonly Dictionary<string, Func<Control>> _pages = new();
-    private readonly Dictionary<string, EnterpriseToggleButtonControl> _buttons = new();
+    private readonly Dictionary<string, EnterpriseNavigationItem> _navItems = new();
     private readonly HashSet<string> _visited = new();
     private readonly HashSet<string> _tipsShown = new();
     private readonly EnterpriseNotifyIcon _tray;
@@ -51,7 +56,9 @@ public sealed class MainForm : EnterpriseToolbarForm
     private readonly EnterpriseVirtualKeyboardControl _keyboard = new() { Dock = DockStyle.Fill, KeyClickSound = false, HideOnClose = false, AccessibleName = "Touch keyboard" };
     private readonly Panel _keyboardPanel = new() { Dock = DockStyle.Bottom, Height = 270, Visible = false, Padding = new Padding(8) };
     private readonly System.Windows.Forms.Timer _focusTimer = new() { Interval = 300 };
-    private readonly EnterpriseToggleButtonControl _touchToggle = new() { Text = "Touch keyboard", Glyph = "\u2328", Width = 185, Height = 38, Margin = new Padding(0, 6, 0, 0), AccessibleName = "Touch keyboard" };
+    private readonly EnterpriseNavigationItem _touchItem = new("Touch keyboard", "\u2328") { Key = "__touch", IsCommand = true, ToolTip = "Show the on-screen keyboard" };
+    private bool _touchOn;
+    private string _lastSection = string.Empty;
     private readonly ToolStripMenuItem _themeMenu = new("Theme");
     private EnterpriseCalloutControl? _tip;
     private EnterpriseFlyout? _flyout;
@@ -94,14 +101,12 @@ public sealed class MainForm : EnterpriseToolbarForm
         AddPage("Settings", () => new SettingsView(Store));
         AddPage("Control Explorer", () => new ControlWorkshopView());
 
-        var workshop = new EnterpriseButtonControl { Text = "Grid Workshop", Variant = EnterpriseButtonVariant.Outline, Width = 185, Height = 38, Margin = new Padding(0, 20, 0, 0) };
-        workshop.Click += (_, _) => { using var form = new Form1(); form.ShowDialog(this); };
-        _navigation.Controls.Add(workshop);
-        _touchToggle.CheckedChanged += (_, _) => SetTouchKeyboard(_touchToggle.Checked);
-        _navigation.Controls.Add(_touchToggle);
+        _nav.FooterItems.Add(new EnterpriseNavigationItem("Grid Workshop", "\u25A6") { Key = "__workshop", IsCommand = true, ToolTip = "Open the grid workshop" });
+        _nav.FooterItems.Add(_touchItem);
+        _nav.ItemInvoked += (_, e) => OnNavigationInvoked(e.Item);
 
         _keyboardPanel.Controls.Add(_keyboard);
-        _keyboard.CloseRequested += (_, _) => _touchToggle.Checked = false;
+        _keyboard.CloseRequested += (_, _) => TouchKeyboardOn = false;
         _focusTimer.Tick += (_, _) => FollowFocus();
 
         _statusBar.AddPanel("status", string.Empty, spring: true);
@@ -114,7 +119,7 @@ public sealed class MainForm : EnterpriseToolbarForm
             else if (e.Panel.Name == "theme") Navigate("Settings");
         };
 
-        Controls.Add(_workspace); Controls.Add(_keyboardPanel); Controls.Add(_navigation); Controls.Add(_identity); Controls.Add(_statusBar);
+        Controls.Add(_workspace); Controls.Add(_keyboardPanel); Controls.Add(_nav); Controls.Add(_identity); Controls.Add(_statusBar);
 
         _tray = new EnterpriseNotifyIcon { Icon = SystemIcons.Application, Text = Store.Data.Settings.SchoolName, Visible = interactive, ToastMode = interactive ? NotifyToastMode.Custom : NotifyToastMode.None };
         _tray.ContextMenuStrip = BuildTrayMenu();
@@ -150,15 +155,57 @@ public sealed class MainForm : EnterpriseToolbarForm
     private void AddPage(string name, Func<Control> factory)
     {
         _pages[name] = factory;
-        var button = new EnterpriseToggleButtonControl { Text = name, Glyph = Glyphs.GetValueOrDefault(name), GroupName = "navigation", Width = 185, Height = 40, Margin = new Padding(0, 3, 0, 3), AccessibleName = name };
-        button.CheckedChanged += (_, _) =>
+        var item = new EnterpriseNavigationItem(name, Glyphs.GetValueOrDefault(name)) { Key = name };
+        _navItems[name] = item;
+        if (Sections.TryGetValue(name, out var section))
         {
-            if (!button.Checked || _currentPage == name) return;
-            try { Navigate(name); }
-            catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Unable to Open " + name); }
-        };
-        _navigation.Controls.Add(button); _buttons[name] = button;
+            if (_lastSection != section)
+            {
+                _nav.Items.Add(EnterpriseNavigationItem.Header(section));
+                _lastSection = section;
+            }
+
+            _nav.Items.Add(item);
+        }
+        else
+        {
+            _nav.FooterItems.Add(item);
+        }
     }
+
+    private void OnNavigationInvoked(EnterpriseNavigationItem item)
+    {
+        switch (item.Key)
+        {
+            case "__workshop":
+                using (var form = new Form1()) form.ShowDialog(this);
+                break;
+            case "__touch":
+                TouchKeyboardOn = !TouchKeyboardOn;
+                break;
+            case { } name when _pages.ContainsKey(name) && _currentPage != name:
+                try { Navigate(name); }
+                catch (Exception exception) { SchoolUi.Report(this, exception.Message, "Unable to Open " + name); }
+                break;
+        }
+    }
+
+    /// <summary>Shows or hides the on-screen keyboard; the navigation shows a badge while it is on.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool TouchKeyboardOn
+    {
+        get => _touchOn;
+        set
+        {
+            if (_touchOn == value) return;
+            _touchOn = value;
+            _touchItem.Badge = value ? "On" : null;
+            SetTouchKeyboard(value);
+        }
+    }
+
+    public EnterpriseNavigationPane Navigation => _nav;
 
     public IReadOnlyCollection<string> PageNames => _pages.Keys;
     public Control CurrentView => _workspace.Controls[0];
@@ -182,7 +229,7 @@ public sealed class MainForm : EnterpriseToolbarForm
             _workspace.Controls.Add(view);
             _currentPage = page;
             _visited.Add(page);
-            if (!_buttons[page].Checked) _buttons[page].Checked = true;
+            _nav.SelectedItem = _navItems[page];
             MarkRead(page);
             ApplySchoolColors();
             SetStatus(StatusText());
@@ -271,13 +318,13 @@ public sealed class MainForm : EnterpriseToolbarForm
 
         var view = new ContextMenuStrip();
         var keyboard = new ToolStripMenuItem("Touch keyboard") { CheckOnClick = true };
-        keyboard.Click += (_, _) => _touchToggle.Checked = keyboard.Checked;
+        keyboard.Click += (_, _) => TouchKeyboardOn = keyboard.Checked;
         var widget = new ToolStripMenuItem("Lesson widget") { CheckOnClick = true };
         widget.Click += (_, _) => ToggleLessonWidget(widget.Checked);
         view.Items.Add(keyboard);
         view.Items.Add(widget);
         view.Items.Add(_themeMenu);
-        view.Opening += (_, _) => { keyboard.Checked = _touchToggle.Checked; widget.Checked = _widget is { IsDisposed: false }; RebuildThemeMenu(); };
+        view.Opening += (_, _) => { keyboard.Checked = TouchKeyboardOn; widget.Checked = _widget is { IsDisposed: false }; RebuildThemeMenu(); };
         AddMenu("view", "View", view);
 
         var help = new ContextMenuStrip();

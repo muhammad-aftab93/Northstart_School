@@ -22,12 +22,23 @@ public sealed class DashboardView : UserControl
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
         body.RowStyles.Add(new RowStyle(SizeType.Absolute, 92)); body.RowStyles.Add(new RowStyle(SizeType.Absolute, 112)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 55)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
         var metrics = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
+        var today = DateTime.Today;
+        var monthTrend = Enumerable.Range(0, 8).Select(k => (double)data.Students.Count(item => item.EnrolledOn.Date <= new DateTime(today.Year, today.Month, 1).AddMonths(k - 6).AddDays(-1))).ToList();
+        var tasksAhead = Enumerable.Range(0, 7).Select(offset => (double)data.Tasks.Count(item => item.Status != "Done" && item.DueOn.Date == today.AddDays(offset))).ToList();
+        var lessonsAhead = Enumerable.Range(0, 7).Select(offset => (double)data.Lessons.Count(item => item.StartsAt.Date == today.AddDays(offset))).ToList();
+        var balances = data.Invoices.OrderByDescending(item => item.Balance).Take(8).Select(item => (double)item.Balance).ToList();
+        var trends = new[] { (monthTrend, EnterpriseSparkline.SparklineKind.Area), (tasksAhead, EnterpriseSparkline.SparklineKind.Column), (lessonsAhead, EnterpriseSparkline.SparklineKind.Column), (balances, EnterpriseSparkline.SparklineKind.Line) };
+        var metricIndex = 0;
         foreach (var metric in new[] { ("ACTIVE STUDENTS", data.Students.Count(item => item.Active).ToString("N0")), ("OPEN TASKS", data.Tasks.Count(item => item.Status != "Done").ToString("N0")), ("TODAY'S LESSONS", data.Lessons.Count(item => item.StartsAt.Date == DateTime.Today).ToString()), ("OUTSTANDING", data.Invoices.Sum(item => item.Balance).ToString("N0") + " " + data.Settings.Currency) })
         {
             metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
             var panel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 14, 0) };
             panel.Controls.Add(new EnterpriseLabelControl { Text = metric.Item2, Dock = DockStyle.Fill, Font = new Font("Segoe UI", 25f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, WordWrap = false, AccessibleName = metric.Item1 });
             panel.Controls.Add(new EnterpriseLabelControl { Text = metric.Item1, Dock = DockStyle.Top, Height = 30, ForeColor = Color.Gray });
+            var (series, kind) = trends[metricIndex++];
+            var spark = new EnterpriseSparklineControl { Dock = DockStyle.Bottom, Height = 28, Kind = kind, ShowFirstLastIndicators = false, ShowHighLowIndicators = kind == EnterpriseSparkline.SparklineKind.Line, AccessibleName = metric.Item1 + " trend" };
+            spark.SetValues(series);
+            panel.Controls.Add(spark);
             metrics.Controls.Add(panel);
         }
         body.Controls.Add(metrics, 0, 0); body.SetColumnSpan(metrics, 2);

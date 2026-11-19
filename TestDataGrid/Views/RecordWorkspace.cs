@@ -49,7 +49,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
     protected readonly SchoolStore Store;
     public SchoolRecordGrid<T> Grid { get; }
     protected readonly CommandBar Commands;
-    private readonly ContextMenuStrip _menu = new();
+    private readonly ContextMenuStrip _menu = new EnterpriseContextMenu();
     private T? _context;
     private readonly TextBox _search = new();
     private readonly Label _summary;
@@ -121,7 +121,10 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
         _menu.Items.Add("Edit", null, (_, _) => { if (_context != null) Edit(_context); });
         _menu.Items.Add("Delete", null, (_, _) => { if (_context != null) Delete(_context); });
         _menu.Items.Add("Copy", null, (_, _) => Grid.CopySelectionToClipboard());
-        Controls.Add(Grid); Controls.Add(_summary); Controls.Add(Commands); Controls.Add(SchoolUi.Heading(title));
+        Breadcrumb = new EnterpriseBreadcrumbControl { Dock = DockStyle.Top, Height = 34, Padding = new Padding(10, 0, 0, 0), AccessibleName = title + " location" };
+        Breadcrumb.SetPath("School/" + title);
+        Breadcrumb.ItemClicked += (_, e) => { if (e.Index == 0) SchoolUi.Window(this)?.Navigate("Overview"); };
+        Controls.Add(Grid); Controls.Add(_summary); Controls.Add(Commands); Controls.Add(Breadcrumb); Controls.Add(SchoolUi.Heading(title));
         Store.Changed += StoreChanged;
         Grid.DataWindowChanged += (_, _) => _summary.Text = $"{Grid.TotalRecordCount:N0} records   ·   {Grid.PagerText}";
         SchoolUi.Apply(this);
@@ -131,6 +134,7 @@ public class RecordWorkspace<T> : UserControl where T : SchoolRecord, new()
     protected void AddCommand(string title, Action action) => Commands.AddCommand(title, action);
 
     public EnterpriseCardViewControl? Cards => _cards;
+    public EnterpriseBreadcrumbControl Breadcrumb { get; }
     public EnterpriseFilterViewControl? Facets => _facets;
 
     /// <summary>Adds a card view of the same records, switched with the Cards / Grid command.</summary>

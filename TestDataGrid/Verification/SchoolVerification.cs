@@ -122,6 +122,7 @@ internal static class SchoolVerification
                     await VerifyInteractiveControlsAsync(main, store, Check);
                     await VerifyShellAsync(main, store, Check);
                     await VerifyDocumentsAndPickersAsync(main, store, Check);
+                    await VerifyNavigationAndTrendsAsync(main, store, Check);
                     main.Navigate("Tasks");
                     var taskToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
                     taskToolbar.PerformCommand("Board / List");
@@ -199,7 +200,7 @@ internal static class SchoolVerification
     private static async Task VerifyInteractiveControlsAsync(MainForm main, SchoolStore store, Action<bool, string> check)
     {
         main.Navigate("Finance");
-        check(FindControls(main).OfType<EnterpriseToggleButtonControl>().Single(item => item.GroupName == "navigation" && item.Checked).Text == "Finance", "Navigation highlights the open screen");
+        check(main.Navigation.SelectedItem?.Text == "Finance", "Navigation highlights the open screen");
 
         main.Navigate("Overview");
         var dashboard = (DashboardView)main.CurrentView;
@@ -276,10 +277,11 @@ internal static class SchoolVerification
         using (main.BeginBusy("Checking")) check(main.IsBusy, "Busy indicator shows while work runs");
         check(!main.IsBusy, "Busy indicator clears afterwards");
 
-        var touch = FindControls(main).OfType<EnterpriseToggleButtonControl>().Single(item => item.Text == "Touch keyboard");
-        touch.PerformClick();
+        main.TouchKeyboardOn = false;
+        main.Navigation.SelectKey("__touch");
         check(main.Keyboard.Parent!.Visible, "Touch keyboard opens from the navigation");
-        touch.PerformClick();
+        check(main.Navigation.FooterItems.Single(item => item.Key == "__touch").Badge == "On" && main.Navigation.SelectedItem?.Key != "__touch", "Navigation shows the keyboard state without selecting it");
+        main.Navigation.SelectKey("__touch");
         check(!main.Keyboard.Parent.Visible, "Touch keyboard closes again");
 
         main.Navigate("Analytics");
@@ -365,6 +367,37 @@ internal static class SchoolVerification
         var text = LessonWidget.Describe(store.Data, lesson.StartsAt.AddMinutes(5));
         check(text.Contains("Now:", StringComparison.Ordinal) && text.Contains("min left", StringComparison.Ordinal) && widget.Shape == EnterpriseFormShape.RoundedRectangle, "Lesson widget describes the running lesson");
         check(store.Data.Settings.ShowBriefing, "Start-of-day briefing is on by default");
+    }
+
+    private static async Task VerifyNavigationAndTrendsAsync(MainForm main, SchoolStore store, Action<bool, string> check)
+    {
+        var nav = main.Navigation;
+        main.Navigate("Overview");
+        check(nav.Items.Count(item => item.IsHeader) == 4 && nav.FooterItems.Any(item => item.Text == "Settings"), "Navigation groups the screens in sections with Settings pinned to the footer");
+        nav.DisplayMode = EnterpriseNavigationDisplayMode.Compact;
+        await Task.Delay(300);
+        check(nav.IsCompact && nav.Width < 120, "Navigation collapses to an icon rail");
+        nav.DisplayMode = EnterpriseNavigationDisplayMode.Expanded;
+        await Task.Delay(300);
+        check(!nav.IsCompact && nav.Width > 200, "Navigation expands again");
+        check(nav.SelectKey("Finance") && nav.SelectedItem?.Text == "Finance" && main.CurrentView is FinanceView, "Selecting a navigation item opens its screen");
+        nav.SelectKey("Students");
+        var students = main.CurrentView;
+        var crumbs = FindControls(students).OfType<EnterpriseBreadcrumbControl>().Single();
+        check(crumbs.Items.Select(item => item.Text).SequenceEqual(new[] { "School", "Students" }), "Record screens show their location in a breadcrumb");
+        string? clicked = null;
+        crumbs.ItemClicked += (_, e) => clicked = e.Item.Text;
+        crumbs.PerformItemClick(0);
+        await Task.Delay(30);
+        check(clicked == "School" && main.CurrentView is DashboardView, "The first breadcrumb segment returns to the overview");
+
+        var sparks = FindControls(main.CurrentView).OfType<EnterpriseSparklineControl>().ToList();
+        check(sparks.Count == 4 && sparks.All(item => item.Values.Count >= 7), "Overview metrics show sparklines");
+        main.Navigate("Students");
+        var grid = FindControls(main.CurrentView).OfType<SchoolRecordGrid<StudentRecord>>().Single();
+        var contextMenu = typeof(RecordWorkspace<StudentRecord>).GetField("_menu", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(main.CurrentView);
+        check(contextMenu is EnterpriseContextMenu && grid.Visible, "Record grids use the themed context menu");
+        main.Navigate("Overview");
     }
 
     private static async Task VerifyDocumentsAndPickersAsync(MainForm main, SchoolStore store, Action<bool, string> check)
