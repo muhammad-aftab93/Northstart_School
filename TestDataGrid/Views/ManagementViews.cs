@@ -250,7 +250,7 @@ public sealed class TasksView : RecordWorkspace<TaskRecord>
             };
             foreach (var task in Store.Data.Tasks.Where(item => item.Status == status))
             {
-                var card = new Button { Width = 270, Height = 100, TextAlign = ContentAlignment.MiddleLeft, Text = $"{task.Title}\r\n{Store.Data.Staff.Single(item => item.Id == task.OwnerId).FullName}\r\n{task.DueOn:dd MMM}  ·  {task.Priority}", Margin = new Padding(0, 0, 0, 10), BackColor = SchoolUi.Header, ForeColor = SchoolUi.Text, FlatStyle = FlatStyle.Flat };
+                var card = new EnterpriseButtonControl { Width = 270, Height = 100, Variant = EnterpriseButtonVariant.Outline, TextWrap = true, TextAlignment = ContentAlignment.MiddleLeft, Text = $"{task.Title}\r\n{Store.Data.Staff.Single(item => item.Id == task.OwnerId).FullName}\r\n{task.DueOn:dd MMM}  ·  {task.Priority}", Margin = new Padding(0, 0, 0, 10), UseMnemonic = false, AccessibleName = task.Title, ToolTipText = "Click to edit, drag to another lane to change the status" };
                 var current = task;
                 var dragStart = Point.Empty;
                 card.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragStart = e.Location; };

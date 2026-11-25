@@ -22,19 +22,20 @@ public sealed class CommandBar : FlowLayoutPanel
 
     private int ButtonHeight => LogicalToDeviceUnits(32);
 
-    private int WidthFor(string text, bool glyph, bool arrow)
-    {
-        using var bold = new Font(Font, FontStyle.Bold);
-        return TextRenderer.MeasureText(text, bold).Width + LogicalToDeviceUnits(28 + (glyph ? 22 : 0) + (arrow ? 24 : 0));
-    }
-
     private T Place<T>(string title, T control) where T : Control
     {
         control.Margin = new Padding(0, 2, 6, 2);
-        control.Height = ButtonHeight;
+        if (control is not EnterpriseButtonBase { AutoSize: true }) control.Height = ButtonHeight;
         _items[title] = control;
         Controls.Add(control);
         return control;
+    }
+
+    private static T Fit<T>(T button) where T : EnterpriseButtonBase
+    {
+        button.AutoSize = true;
+        button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        return button;
     }
 
     private void Run(string title, Action action)
@@ -45,21 +46,21 @@ public sealed class CommandBar : FlowLayoutPanel
 
     public EnterpriseButtonControl AddCommand(string title, Action action, string? glyph = null, EnterpriseButtonVariant variant = EnterpriseButtonVariant.Outline)
     {
-        var button = Place(title, new EnterpriseButtonControl { Text = title, Glyph = glyph, Variant = variant, Width = WidthFor(title, glyph != null, false), AccessibleName = title });
+        var button = Place(title, Fit(new EnterpriseButtonControl { Text = title, Glyph = glyph, Variant = variant, AccessibleName = title, ToolTipText = title }));
         button.Click += (_, _) => Run(title, action);
         return button;
     }
 
     public EnterpriseToggleButtonControl AddToggle(string title, Action<bool> changed, string? glyph = null)
     {
-        var toggle = Place(title, new EnterpriseToggleButtonControl { Text = title, Glyph = glyph, Width = WidthFor(title, glyph != null, false), AccessibleName = title });
+        var toggle = Place(title, Fit(new EnterpriseToggleButtonControl { Text = title, Glyph = glyph, AccessibleName = title, ToolTipText = title }));
         toggle.CheckedChanged += (_, _) => Run(title, () => changed(toggle.Checked));
         return toggle;
     }
 
     public EnterpriseSplitButtonControl AddSplit(string title, Action primary, IEnumerable<(string Text, Action Action)> options, string? glyph = null)
     {
-        var split = Place(title, new EnterpriseSplitButtonControl { Text = title, Glyph = glyph, Width = WidthFor(title, glyph != null, true), AccessibleName = title });
+        var split = Place(title, Fit(new EnterpriseSplitButtonControl { Text = title, Glyph = glyph, AccessibleName = title, ToolTipText = title }));
         split.PrimaryActionClicked += (_, _) => Run(title, primary);
         foreach (var (text, action) in options) split.AddOption(text, () => Run(title, action));
         return split;
@@ -67,7 +68,7 @@ public sealed class CommandBar : FlowLayoutPanel
 
     public EnterpriseDropDownButtonControl AddMenu(string title, params (string Text, Action Action)[] options)
     {
-        var menu = Place(title, new EnterpriseDropDownButtonControl { Text = title, Variant = EnterpriseButtonVariant.Outline, Width = WidthFor(title, false, true), AccessibleName = title });
+        var menu = Place(title, Fit(new EnterpriseDropDownButtonControl { Text = title, Variant = EnterpriseButtonVariant.Outline, AccessibleName = title, ToolTipText = title }));
         foreach (var (text, action) in options) menu.AddOption(text, () => Run(title, action));
         return menu;
     }

@@ -100,8 +100,8 @@ public sealed class StudentEditDialog : EnterpriseForm
         _emailInput = (TextBox)_inputs.First(input => input.Column.Field == nameof(Student.Email)).Input;
         _errors = new ErrorProvider { ContainerControl = this, BlinkStyle = ErrorBlinkStyle.NeverBlink };
 
-        var save = new Button { Text = "Save", Width = 90, Height = 32, ForeColor = SystemColors.ControlText, UseVisualStyleBackColor = true };
-        var cancel = new Button { Text = "Cancel", Width = 90, Height = 32, ForeColor = SystemColors.ControlText, DialogResult = DialogResult.Cancel, UseVisualStyleBackColor = true };
+        var save = new EnterpriseButtonControl { Text = "&Save", Glyph = "\u2714", Width = 100, Height = 34, ToolTipText = "Save the student (Alt+S)" };
+        var cancel = new EnterpriseButtonControl { Text = "&Cancel", Variant = EnterpriseButtonVariant.Outline, Width = 100, Height = 34, DialogResult = DialogResult.Cancel };
         save.Click += SaveClicked;
         var buttons = new FlowLayoutPanel
         {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using EnterpriseUI.Data;
 using EnterpriseUI.Grids;
+using EnterpriseUI.WinForms;
 
 namespace TestDataGrid;
 
@@ -88,7 +89,7 @@ public partial class Form1
         _transferPanel.Controls.Add(_transferGrid);
         var targetTitle = new Label { Text = "Transferred Students", Dock = DockStyle.Top, Height = 36, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0) };
         _transferPanel.Controls.Add(targetTitle);
-        var returnButton = new Button { Text = "Return Selected", ForeColor = SystemColors.ControlText, Dock = DockStyle.Bottom, Height = 36 };
+        var returnButton = new EnterpriseButtonControl { Text = "Return Selected", Glyph = "\u21A9", Variant = EnterpriseButtonVariant.Outline, Dock = DockStyle.Bottom, Height = 36, ToolTipText = "Move the selected students back to the main grid" };
         returnButton.Click += async (_, _) => await RunGridOperationAsync(async () =>
         {
             var selected = _transferGrid.Selection.SelectedRows.Select(index => _transferGrid.TryGetRowAt(index, out var row) ? row.Item : null).OfType<Student>().ToList();

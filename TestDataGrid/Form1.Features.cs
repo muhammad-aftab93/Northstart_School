@@ -8,6 +8,7 @@ using EnterpriseUI.Data;
 using EnterpriseUI.Exporting;
 using EnterpriseUI.Grids;
 using EnterpriseUI.Theming;
+using EnterpriseUI.WinForms;
 
 namespace TestDataGrid;
 
@@ -376,8 +377,8 @@ public partial class Form1
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var row in new[] { ("Column", (Control)field), ("Operator", op), ("Value", first), ("Second value", second) }) { table.Controls.Add(new Label { Text = row.Item1, AutoSize = true }); table.Controls.Add(row.Item2); }
-        var apply = new Button { Text = "Apply", DialogResult = DialogResult.OK, Width = 90 };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 90 };
+        var apply = new EnterpriseButtonControl { Text = "&Apply", Glyph = "\u2714", DialogResult = DialogResult.OK, Width = 100, Height = 34 };
+        var cancel = new EnterpriseButtonControl { Text = "&Cancel", Variant = EnterpriseButtonVariant.Outline, DialogResult = DialogResult.Cancel, Width = 100, Height = 34 };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft };
         buttons.Controls.Add(cancel); buttons.Controls.Add(apply);
         dialog.Controls.Add(table); dialog.Controls.Add(buttons); dialog.AcceptButton = apply; dialog.CancelButton = cancel;
@@ -395,8 +396,8 @@ public partial class Form1
         var input = new TextBox { Text = initial, Dock = DockStyle.Top };
         var caption = new Label { Text = label, Dock = DockStyle.Top, Height = 28 };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, FlowDirection = FlowDirection.RightToLeft };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK };
+        var cancel = new EnterpriseButtonControl { Text = "&Cancel", Variant = EnterpriseButtonVariant.Outline, DialogResult = DialogResult.Cancel, Width = 100, Height = 34 };
+        var ok = new EnterpriseButtonControl { Text = "&OK", DialogResult = DialogResult.OK, Width = 100, Height = 34 };
         buttons.Controls.Add(cancel); buttons.Controls.Add(ok);
         dialog.Padding = new Padding(12); dialog.Controls.Add(input); dialog.Controls.Add(caption); dialog.Controls.Add(buttons); dialog.AcceptButton = ok; dialog.CancelButton = cancel;
         return dialog.ShowDialog(this) == DialogResult.OK ? input.Text : null;

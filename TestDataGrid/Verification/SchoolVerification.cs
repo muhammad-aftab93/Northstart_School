@@ -128,13 +128,26 @@ internal static class SchoolVerification
                     taskToolbar.PerformCommand("Board / List");
                     await Task.Delay(30);
                     Check(!((TasksView)main.CurrentView).Grid.Visible, "Board view hides the list grid");
-                    Check(FindControls(main.CurrentView).OfType<Button>().Any(button => button.Text.Contains("Prepare laboratory", StringComparison.Ordinal)), "Task board displays persisted task cards");
+                    Check(FindControls(main.CurrentView).OfType<EnterpriseButtonControl>().Any(button => button.Text.Contains("Prepare laboratory", StringComparison.Ordinal)), "Task board displays persisted task cards");
                     using (var image = new Bitmap(main.Width, main.Height)) { main.DrawToBitmap(image, new Rectangle(Point.Empty, main.Size)); image.Save(Path.Combine(directory, "Task-Board.png"), System.Drawing.Imaging.ImageFormat.Png); }
                     main.Navigate("Attendance");
                     var attendanceToolbar = FindControls(main.CurrentView).OfType<CommandBar>().Single();
                     Check(attendanceToolbar.Titles.Contains("Mark Today Present"), "Attendance roll-call command is available");
                     main.ClientSize = new Size(1050, 650); main.Navigate("Students"); main.PerformLayout(); await Task.Delay(30);
                     Check(main.CurrentView.Width > 500 && main.CurrentView.Height > 300, "Compact desktop layout remains usable");
+                    var commandButtons = FindControls(main.CurrentView).OfType<EnterpriseButtonBase>().ToList();
+                    Check(commandButtons.Count > 0 && commandButtons.All(button => !string.IsNullOrWhiteSpace(button.AccessibilityObject.Name)), "Every button exposes an accessible name");
+                    Check(commandButtons.All(button => button.TabStop && button.AccessibleRole is AccessibleRole.PushButton or AccessibleRole.CheckButton or AccessibleRole.SplitButton), "Every button is reachable with Tab and has a button role");
+                    Check(commandButtons.All(button => button.Height >= button.LogicalToDeviceUnits(28)), "Buttons keep their DPI-scaled height");
+                    Check(commandButtons.All(button => !button.AutoSize || button.Width >= button.GetPreferredSize(Size.Empty).Width - 2), "Auto-sized command buttons fit their content");
+                    using (var probe = new EnterpriseButtonControl { Text = "&Probe", AccessibleName = "Probe" })
+                    {
+                        main.Controls.Add(probe);
+                        var keyClicks = 0; probe.Click += (_, _) => keyClicks++;
+                        probe.PerformClick();
+                        Check(keyClicks == 1 && probe.AccessibilityObject.KeyboardShortcut == "Alt+P", "Buttons click through PerformClick and expose their access key");
+                        main.Controls.Remove(probe);
+                    }
                     log.WriteLine($"Verified {checks} school checks.");
                 }
                 catch (Exception exception) { log.WriteLine("FAIL: " + exception); Environment.ExitCode = 1; }
